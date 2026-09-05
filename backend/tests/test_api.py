@@ -453,7 +453,41 @@ def test_extract_pdf_text_uses_pdftotext_fallback(monkeypatch) -> None:
         lambda raw: "Teks fallback dari pdftotext",
     )
 
-    assert extract_pdf_text(make_test_pdf("ignored")) == "Teks fallback dari pdftotext"
+    assert extract_pdf_text(make_test_pdf("ignored")) == "[HALAMAN 1] Teks fallback dari pdftotext"
+
+
+def test_extract_pdf_document_uses_ocr_for_scanned_page(monkeypatch) -> None:
+    page = mock.Mock()
+    page.extract_text.return_value = ""
+    reader = mock.Mock(is_encrypted=False, pages=[page])
+    monkeypatch.setattr(content_service, "PdfReader", mock.Mock(return_value=reader))
+    monkeypatch.setattr(content_service, "_extract_with_pdftotext", lambda raw: "")
+    monkeypatch.setattr(
+        content_service,
+        "_ocr_pages",
+        lambda raw, pages: ({1: "Terdakwa Sari Utami dipidana 5 tahun"}, None),
+    )
+
+    extracted = content_service.extract_pdf_document(make_test_pdf("ignored"))
+
+    assert extracted.ocr_used is True
+    assert extracted.page_count == 1
+    assert "[HALAMAN 1]" in extracted.text
+    assert "Sari Utami" in extracted.text
+
+
+def test_gradio_token_budget_preserves_document_head_and_question_tail() -> None:
+    from app.config import GRADIO_MAX_INPUT_TOKENS
+    from app.controllers.chat_controller import _fit_gradio_message
+    from app.services.content_service import estimate_tokens
+
+    prompt = "HEAD_FACT Bima Kencana\n" + ("uraian administratif " * 70_000) + "\nTAIL_QUESTION siapa terdakwa?"
+    fitted = _fit_gradio_message(prompt, GRADIO_MAX_INPUT_TOKENS)
+
+    assert estimate_tokens(fitted) <= GRADIO_MAX_INPUT_TOKENS
+    assert "HEAD_FACT Bima Kencana" in fitted
+    assert "TAIL_QUESTION siapa terdakwa?" in fitted
+    assert "Bagian tengah dipangkas" in fitted
 
 
 def test_current_public_url_returns_latest_tunnel_url(tmp_path) -> None:
@@ -625,6 +659,9 @@ async def test_pdf_extract_returns_raw_text() -> None:
     payload = response.json()
     assert payload["name"] == "putusan.pdf"
     assert payload["char_count"] > 0
+    assert payload["page_count"] == 1
+    assert payload["ocr_used"] is False
+    assert "[HALAMAN 1]" in payload["text"]
     assert "Nomor 123/Pid.B/2026/PN.JKT" in payload["text"]
 
 
@@ -769,7 +806,19 @@ async def test_chat_session_save_creates_chat() -> None:
                 headers={"Authorization": "Bearer fake-token"},
                 json={
                     "title": "Tanya Hukum",
-                    "messages": [{"id": "m1", "role": "user", "content": "Halo"}],
+                    "messages": [{
+                        "id": "m1",
+                        "role": "user",
+                        "content": "Halo",
+                        "attachments": [{
+                            "id": "att-1",
+                            "file_name": "putusan.pdf",
+                            "file_size": 1024,
+                            "status": "done",
+                            "library_file_id": "file-123",
+                            "page_count": 12,
+                        }],
+                    }],
                     "model": "sft",
                     "provider": "local",
                     "context_limit": 12000,
@@ -779,6 +828,9 @@ async def test_chat_session_save_creates_chat() -> None:
     assert response.status_code == 200
     assert response.json()["title"] == "Tanya Hukum"
     assert response.json()["messages"][0]["content"] == "Halo"
+    saved_message = ref.set.call_args.args[0]["messages"][0]
+    assert saved_message["attachments"][0]["library_file_id"] == "file-123"
+    assert saved_message["attachments"][0]["page_count"] == 12
     fake_db.collection.assert_called_once_with("chats")
     ref.set.assert_called_once()
 

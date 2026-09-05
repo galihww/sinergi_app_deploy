@@ -34,6 +34,9 @@ export interface Attachment {
   tokenCount?: number; // jumlah token teks hasil ekstraksi (dari backend)
   error?: string; // detail error ekstraksi bila tersedia
   libraryFileId?: string; // id dokumen yang sudah dibersihkan dan di-embed di backend
+  pageCount?: number;
+  ocrUsed?: boolean;
+  warning?: string;
 }
 
 export interface ChatMessage {

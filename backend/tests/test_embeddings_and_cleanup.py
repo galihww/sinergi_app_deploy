@@ -32,6 +32,16 @@ def test_make_chunks_returns_non_empty_chunks() -> None:
     assert all(chunk.section_label for chunk in chunks)
 
 
+def test_make_chunks_preserves_pdf_page_labels() -> None:
+    chunks = make_chunks(
+        "[HALAMAN 1]\nIdentitas terdakwa Bima Kencana.\n\n"
+        "[HALAMAN 2]\nAmar pidana penjara selama tujuh tahun."
+    )
+
+    assert {chunk.section_label for chunk in chunks} == {"Halaman 1", "Halaman 2"}
+    assert all(chunk.text.startswith("[HALAMAN ") for chunk in chunks)
+
+
 def test_cosine_distance_is_mapped_to_similarity() -> None:
     assert cosine_score(0) == 1.0
     assert cosine_score(2) == 0.0

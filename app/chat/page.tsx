@@ -376,10 +376,20 @@ async function requestRagResponse(
   const hits = await queryRag(
     question,
     docIds,
-    3,
+    10,
     inlineTexts.length > 0 ? inlineTexts.join("\n\n") : undefined
   );
-  const context = hitsToContext(hits);
+  const retrievedContext = hitsToContext(hits);
+  const context = retrievedContext
+    ? [
+        "[INSTRUKSI DOKUMEN]",
+        "Jawab hanya berdasarkan potongan dokumen berikut.",
+        "Cantumkan sitasi [HALAMAN n] untuk setiap fakta utama.",
+        "Jika jawabannya tidak ditemukan, katakan bahwa informasi tidak ditemukan dalam potongan yang diterima; jangan menebak.",
+        "",
+        retrievedContext,
+      ].join("\n")
+    : "";
   const sources = hitsToSources(hits);
 
   // This is only a last-resort path when retrieval returned no hit. Never
@@ -938,7 +948,7 @@ function MessageBubble({
             <Sparkles className="h-4 w-4 text-pink-500" />
             <span className="text-xs font-bold text-purple-800">LEGAL-VERSE AI</span>
           </div>
-{message.content?.trim() ? (
+          {message.content?.trim() ? (
             <MarkdownContent content={message.content} />
           ) : (
             !message.isLoading && (
@@ -946,6 +956,18 @@ function MessageBubble({
                 Tidak ada jawaban yang dihasilkan.
               </p>
             )
+          )}
+          {message.sources && message.sources.length > 0 && (
+            <div className="mt-4 rounded-xl bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800">
+              Model menerima {message.sources.length} potongan RAG · sekitar{" "}
+              {Math.min(
+                36_000,
+                message.sources.reduce(
+                  (total, source) => total + (source.excerpt?.length ?? 0),
+                  0
+                )
+              ).toLocaleString("id-ID")} karakter. Buka panel Sumber Jawaban untuk memeriksa teks yang dipakai.
+            </div>
           )}
         </div>
       </div>
@@ -1043,11 +1065,18 @@ function AttachmentChip({
           </div>
         )}
         {canPreview && (
-          <div className="text-xs font-medium text-purple-600">
-            {attachment.tokenCount != null
-              ? `${attachment.tokenCount.toLocaleString("id-ID")} token · klik untuk lihat`
-              : "Menghitung token..."}
-          </div>
+          <>
+            <div className="text-xs font-medium text-purple-600">
+              {attachment.tokenCount != null
+                ? `${attachment.tokenCount.toLocaleString("id-ID")} token · ${attachment.pageCount ?? "?"} halaman · klik untuk lihat`
+                : "Menghitung token..."}
+            </div>
+            {attachment.warning && (
+              <div className="mt-0.5 text-xs font-medium text-amber-600">
+                {attachment.warning}
+              </div>
+            )}
+          </>
         )}
       </div>
       {attachment.status === "done" ? (
@@ -1333,7 +1362,8 @@ function ChatInput({
   onModelChange: (m: "sft" | "rag") => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const canSubmit = value.trim().length > 0 || attachments.length > 0;
+  const attachmentsReady = attachments.every((attachment) => attachment.status === "done");
+  const canSubmit = attachmentsReady && (value.trim().length > 0 || attachments.length > 0);
 
   return (
     <div className="rounded-3xl border border-zinc-200 bg-white p-3 shadow-lg">
@@ -1895,13 +1925,25 @@ const incoming = Array.from(fileList);
       });
     }
 
-if (pending.length === 0) return;
+    if (pending.length === 0) return;
+    setDraftModel("rag");
+    if (activeSessionId) setSessionModel(activeSessionId, "rag");
     setAttachments((prev) => [...prev, ...pending]);
 
-    // Ekstraksi teks asli lewat backend Python, bukan simulasi.
+    // Ekstraksi, OCR bila dibutuhkan, lalu simpan ke library sebelum chat dapat dikirim.
     for (const attachment of pending) {
       extractPdfText(attachment.file!)
-        .then(({ text, token_count }) => {
+        .then(async ({ text, token_count, page_count, ocr_used, warnings }) => {
+          const record = await saveToLibrary(
+            attachment.file!,
+            text,
+            token_count,
+            activeSessionId ?? undefined
+          );
+          const allWarnings = [
+            ...warnings,
+            ...(record.extraction_warnings ?? []),
+          ].filter(Boolean);
           setAttachments((prev) =>
             prev.map((att) =>
               att.id === attachment.id
@@ -1910,30 +1952,15 @@ if (pending.length === 0) return;
                     status: "done" as const,
                     extractedText: text,
                     tokenCount: token_count,
+                    libraryFileId: record.id,
+                    pageCount: record.page_count ?? page_count,
+                    ocrUsed: record.ocr_used ?? ocr_used,
+                    warning: allWarnings.length > 0
+                      ? [...new Set(allWarnings)].join(" ")
+                      : undefined,
                   }
                 : att
             )
-          );
-          // Simpan PDF (Cloud Storage) + teks/metadata (Firestore) ke library.
-          saveToLibrary(
-            attachment.file!,
-            text,
-            token_count,
-            activeSessionId ?? undefined
-          ).then(
-            (record) => {
-              setAttachments((prev) =>
-                prev.map((att) =>
-                  att.id === attachment.id
-                    ? { ...att, libraryFileId: record.id }
-                    : att
-                )
-              );
-              console.log("[library] tersimpan:", attachment.fileName);
-            },
-            (err) => {
-              console.warn("[library] gagal menyimpan:", attachment.fileName, err);
-            }
           );
         })
         .catch((error: unknown) => {

@@ -50,7 +50,7 @@ LOCAL_CONTEXT_WINDOW = int(os.getenv("VLLM_MAX_MODEL_LEN", "65536"))
 GRADIO_SPACE = os.getenv("GRADIO_SPACE", "galihww/inaverdict-gemma-v2-demo").rstrip("/")
 GRADIO_MODEL_ID = (os.getenv("GRADIO_MODEL_ID", "").strip() or "Legal-verse/InaVerdict-gemma-v2")
 GRADIO_CONTEXT_WINDOW = int(os.getenv("GRADIO_CONTEXT_WINDOW", "131072"))
-GRADIO_MAX_CHARS = int(os.getenv("GRADIO_MAX_CHARS", "12000"))
+GRADIO_MAX_INPUT_TOKENS = int(os.getenv("GRADIO_MAX_INPUT_TOKENS", "65536"))
 GRADIO_MAX_NEW_TOKENS = min(
     int(os.getenv("GRADIO_MAX_NEW_TOKENS", str(MAX_CHAT_OUTPUT_TOKENS))),
     MAX_CHAT_OUTPUT_TOKENS,

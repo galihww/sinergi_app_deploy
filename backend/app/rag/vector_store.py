@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from google.cloud.firestore_v1.base_vector_query import DistanceMeasure
@@ -15,6 +16,9 @@ class DocumentChunk:
     section_label: str
     text: str
     chunk_index: int
+
+
+_PAGE_MARKER_RE = re.compile(r"(?m)^\[HALAMAN\s+(\d+)\]\s*$")
 
 
 def _split_text(text: str, max_chars: int = 1800, overlap: int = 240) -> list[str]:
@@ -50,6 +54,26 @@ def _split_text(text: str, max_chars: int = 1800, overlap: int = 240) -> list[st
 
 
 def make_chunks(text: str) -> list[DocumentChunk]:
+    page_markers = list(_PAGE_MARKER_RE.finditer(text))
+    if page_markers:
+        page_chunks: list[DocumentChunk] = []
+        for marker_index, marker in enumerate(page_markers):
+            page_number = int(marker.group(1))
+            body_start = marker.end()
+            body_end = page_markers[marker_index + 1].start() if marker_index + 1 < len(page_markers) else len(text)
+            page_text = text[body_start:body_end].strip()
+            for chunk_index, chunk in enumerate(_split_text(page_text)):
+                page_chunks.append(
+                    DocumentChunk(
+                        section_key=f"page_{page_number}",
+                        section_label=f"Halaman {page_number}",
+                        text=f"[HALAMAN {page_number}]\n{chunk}",
+                        chunk_index=chunk_index,
+                    )
+                )
+        if page_chunks:
+            return page_chunks
+
     chunks: list[DocumentChunk] = []
     for key, section_text in sectionize(text).items():
         for index, chunk in enumerate(_split_text(section_text)):
@@ -64,7 +88,9 @@ def make_chunks(text: str) -> list[DocumentChunk]:
 
 def chunk_payloads(text: str) -> list[tuple[DocumentChunk, list[float]]]:
     chunks = make_chunks(text)
-    vectors = embed_documents([chunk.text for chunk in chunks]) if chunks else []
+    vectors: list[list[float]] = []
+    for start in range(0, len(chunks), 64):
+        vectors.extend(embed_documents([chunk.text for chunk in chunks[start:start + 64]]))
     return list(zip(chunks, vectors))
 
 

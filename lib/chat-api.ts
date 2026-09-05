@@ -8,6 +8,20 @@ type StoredMessagePayload = {
   thinking?: string | null;
   thinking_seconds?: number | null;
   sources?: unknown[] | null;
+  attachments?: StoredAttachmentPayload[] | null;
+};
+
+type StoredAttachmentPayload = {
+  id: string;
+  file_name: string;
+  file_size: number;
+  status: "done" | "error";
+  token_count?: number | null;
+  library_file_id?: string | null;
+  page_count?: number | null;
+  ocr_used?: boolean;
+  warning?: string | null;
+  error?: string | null;
 };
 
 type ChatPayload = {
@@ -31,6 +45,19 @@ function serializeMessage(message: ChatMessage): StoredMessagePayload {
     thinking: message.thinking ?? null,
     thinking_seconds: message.thinkingSeconds ?? null,
     sources: message.sources ?? null,
+    attachments:
+      message.attachments?.map((attachment) => ({
+        id: attachment.id,
+        file_name: attachment.fileName,
+        file_size: attachment.fileSize,
+        status: attachment.status === "uploading" ? "error" : attachment.status,
+        token_count: attachment.tokenCount ?? null,
+        library_file_id: attachment.libraryFileId ?? null,
+        page_count: attachment.pageCount ?? null,
+        ocr_used: attachment.ocrUsed ?? false,
+        warning: attachment.warning ?? null,
+        error: attachment.error ?? null,
+      })) ?? null,
   };
   return payload;
 }
@@ -43,6 +70,18 @@ function normalizeMessage(payload: StoredMessagePayload): ChatMessage {
     thinking: payload.thinking ?? undefined,
     thinkingSeconds: payload.thinking_seconds ?? undefined,
     sources: payload.sources as ChatMessage["sources"],
+    attachments: payload.attachments?.map((attachment) => ({
+      id: attachment.id,
+      fileName: attachment.file_name,
+      fileSize: attachment.file_size,
+      status: attachment.status,
+      tokenCount: attachment.token_count ?? undefined,
+      libraryFileId: attachment.library_file_id ?? undefined,
+      pageCount: attachment.page_count ?? undefined,
+      ocrUsed: attachment.ocr_used ?? false,
+      warning: attachment.warning ?? undefined,
+      error: attachment.error ?? undefined,
+    })),
   };
 }
 

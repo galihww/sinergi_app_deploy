@@ -81,7 +81,7 @@ class RagQueryRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2_000)
     document_ids: list[str] = Field(default_factory=list, max_length=10)
     text: str | None = Field(default=None, max_length=1_000_000)
-    top_k: int = Field(default=3, ge=1, le=10)
+    top_k: int = Field(default=10, ge=1, le=12)
 
 
 class RagHit(BaseModel):
@@ -102,6 +102,9 @@ class PdfExtractResponse(BaseModel):
     text: str
     char_count: int
     token_count: int
+    page_count: int = 0
+    ocr_used: bool = False
+    warnings: list[str] = Field(default_factory=list)
 
 
 class LibrarySaveRequest(BaseModel):
@@ -129,6 +132,9 @@ class LibraryItem(BaseModel):
     embedding_model: str | None = None
     embedding_dimensions: int | None = None
     embedding_error: str | None = None
+    page_count: int = 0
+    ocr_used: bool = False
+    extraction_warnings: list[str] = Field(default_factory=list)
 
 class ProjectCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
@@ -150,6 +156,19 @@ class ProjectItem(BaseModel):
     instructions: str | None = None
 
 
+class StoredAttachment(BaseModel):
+    id: str = Field(min_length=1, max_length=255)
+    file_name: str = Field(min_length=1, max_length=255)
+    file_size: int = Field(default=0, ge=0)
+    status: Literal["done", "error"] = "done"
+    token_count: int | None = Field(default=None, ge=0)
+    library_file_id: str | None = Field(default=None, max_length=255)
+    page_count: int | None = Field(default=None, ge=0)
+    ocr_used: bool = False
+    warning: str | None = Field(default=None, max_length=2_000)
+    error: str | None = Field(default=None, max_length=2_000)
+
+
 class StoredChatMessage(BaseModel):
     id: str = Field(min_length=1, max_length=255)
     role: Literal["user", "assistant"]
@@ -157,6 +176,7 @@ class StoredChatMessage(BaseModel):
     thinking: str | None = Field(default=None, max_length=2_000_000)
     thinking_seconds: float | None = None
     sources: list[dict] | None = None
+    attachments: list[StoredAttachment] | None = Field(default=None, max_length=10)
 
 
 class ChatSessionSaveRequest(BaseModel):

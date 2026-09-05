@@ -7,10 +7,10 @@ import httpx
 from fastapi import HTTPException, Request
 from fastapi.responses import StreamingResponse
 
-from app.config import (MODEL_ID, PROVIDER_BY_ID, SYSTEM_PROMPT, VLLM_BASE_URL, _vllm_model_cache, provider_api_key, resolve_vllm_model, GRADIO_MAX_CHARS, GRADIO_MAX_NEW_TOKENS, GRADIO_SYSTEM_PROMPT, GRADIO_TEMPERATURE)
+from app.config import (MODEL_ID, PROVIDER_BY_ID, SYSTEM_PROMPT, VLLM_BASE_URL, _vllm_model_cache, provider_api_key, resolve_vllm_model, GRADIO_MAX_INPUT_TOKENS, GRADIO_MAX_NEW_TOKENS, GRADIO_SYSTEM_PROMPT, GRADIO_TEMPERATURE)
 from app.core.firebase import db
 from app.schemas import MAX_CHAT_OUTPUT_TOKENS, ChatRequest, ChatResponse, ChatSessionItem, ChatSessionSaveRequest, Message, ProviderConfig, StoredChatMessage
-from app.services.content_service import expand_content, flatten_content
+from app.services.content_service import estimate_tokens, expand_content, flatten_content
 from app.services.gradio_service import gradio_respond, gradio_stream
 from app.vllm_on_demand import VllmOnDemandManager, VllmStartupError
 
@@ -41,6 +41,21 @@ async def _prepare(body: ChatRequest, request: Request):
     return provider, model, f"{provider.base_url}/v1/chat/completions", ({"Authorization": f"Bearer {key}"} if provider.kind == "wandb" else {}), messages, None
 
 
+def _fit_gradio_message(text: str, token_budget: int) -> str:
+    if estimate_tokens(text) <= token_budget:
+        return text
+    marker = "\n\n[Bagian tengah dipangkas karena melewati anggaran token input.]\n\n"
+    retained_chars = max(1, len(text) - len(marker))
+    candidate = text
+    while estimate_tokens(candidate) > token_budget and retained_chars > 2:
+        current_tokens = estimate_tokens(candidate)
+        retained_chars = max(2, int(retained_chars * token_budget / current_tokens * 0.95))
+        head_chars = max(1, int(retained_chars * 0.55))
+        tail_chars = max(1, retained_chars - head_chars)
+        candidate = text[:head_chars] + marker + text[-tail_chars:]
+    return candidate
+
+
 def _gradio_payload(body: ChatRequest) -> dict:
     turns = [m for m in body.messages if m.role in ("user", "assistant")]
     if not turns or turns[-1].role != "user":
@@ -53,8 +68,7 @@ def _gradio_payload(body: ChatRequest) -> dict:
             lines.append(f"{label}: {text}")
     question = flatten_content(turns[-1].content).strip()
     message_text = "\n\n".join([*lines, f"User: {question}"]) if lines else question
-    if len(message_text) > GRADIO_MAX_CHARS:
-        message_text = "\n\n[dokumen dipangkas untuk memenuhi batas konteks]\n\n" + message_text[-GRADIO_MAX_CHARS:]
+    message_text = _fit_gradio_message(message_text, GRADIO_MAX_INPUT_TOKENS)
     return {
         "message": {"text": message_text, "files": []},
         "system_prompt": GRADIO_SYSTEM_PROMPT,
@@ -240,6 +254,7 @@ def _to_item(chat_id: str, data: dict) -> ChatSessionItem:
             thinking=m.get("thinking"),
             thinking_seconds=m.get("thinking_seconds"),
             sources=m.get("sources"),
+            attachments=m.get("attachments"),
         )
         for m in (data.get("messages") or [])
     ]

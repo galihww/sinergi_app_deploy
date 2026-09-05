@@ -61,9 +61,12 @@ export interface ExtractedPdfText {
   text: string;
   char_count: number;
   token_count: number;
+  page_count: number;
+  ocr_used: boolean;
+  warnings: string[];
 }
 
-/** Extract the raw PDF text server-side (PyMuPDF) and return it. */
+/** Extract page-aware PDF text server-side, including OCR fallback when needed. */
 export async function extractPdfText(file: File): Promise<ExtractedPdfText> {
   const data = await toDataUrl(file);
   const user = auth.currentUser;
@@ -90,7 +93,7 @@ export async function extractPdfText(file: File): Promise<ExtractedPdfText> {
 export async function queryRag(
   question: string,
   documentIds: string[],
-  topK = 3,
+  topK = 10,
   text?: string
 ): Promise<RagHit[]> {
   const user = auth.currentUser;
@@ -118,14 +121,18 @@ export async function queryRag(
 }
 
 /** Flatten retrieved sections into a compact, readable context blob. */
-export function hitsToContext(hits: RagHit[], maxChars = 6000): string {
+export function hitsToContext(hits: RagHit[], maxChars = 36_000): string {
   let used = 0;
   const parts: string[] = [];
   for (const hit of hits) {
     const block = `[${hit.label} | relevansi ${hit.score.toFixed(2)}]\n${hit.text.trim()}`;
-    if (used + block.length > maxChars) break;
-    parts.push(block);
-    used += block.length;
+    const remaining = maxChars - used;
+    if (remaining <= 0) break;
+    const included = block.length <= remaining
+      ? block
+      : `${block.slice(0, Math.max(0, remaining - 32))}\n[potongan dipersingkat]`;
+    if (included.trim()) parts.push(included);
+    used += included.length;
   }
   return parts.join("\n\n");
 }
@@ -145,6 +152,9 @@ export interface LibraryFileRecord {
   embedding_model?: string | null;
   embedding_dimensions?: number | null;
   embedding_error?: string | null;
+  page_count?: number;
+  ocr_used?: boolean;
+  extraction_warnings?: string[];
 }
 
 function toDataUrlLibrary(file: File): Promise<string> {

@@ -1319,22 +1319,32 @@ function MaxOutputSelector({
   disabled: boolean;
 }) {
   return (
-    <label className="flex items-center gap-1.5 rounded-full bg-white/80 px-3 py-1 text-[11px] font-medium text-zinc-500 shadow-sm ring-1 ring-zinc-100">
-      Output
-      <select
-        value={value}
-        disabled={disabled}
-        onChange={(event) => onChange(Number(event.target.value))}
-        className="bg-transparent font-semibold text-zinc-700 outline-none disabled:opacity-50"
-        aria-label="Maximum output tokens"
-      >
-        {MAX_OUTPUT_OPTIONS.filter((tokens) => tokens <= max).map((tokens) => (
-          <option key={tokens} value={tokens}>
-            {tokens >= 1024 ? `${tokens / 1024}K` : tokens}
-          </option>
-        ))}
-      </select>
-    </label>
+    <div className="flex items-center gap-2">
+      <label className="flex items-center gap-1.5 rounded-full bg-white/80 px-3 py-1 text-[11px] font-medium text-zinc-500 shadow-sm ring-1 ring-zinc-100">
+        Output
+        <select
+          value={value}
+          disabled={disabled}
+          onChange={(event) => onChange(Number(event.target.value))}
+          className="bg-transparent font-semibold text-zinc-700 outline-none disabled:opacity-50"
+          aria-label="Maximum output tokens"
+        >
+          {MAX_OUTPUT_OPTIONS.filter((tokens) => tokens <= max).map((tokens) => (
+            <option key={tokens} value={tokens}>
+              {tokens >= 1024 ? `${tokens / 1024}K` : tokens}
+            </option>
+          ))}
+        </select>
+      </label>
+      {value > 8192 && (
+        <span
+          className="text-[10px] font-medium text-amber-700"
+          title="Output besar membutuhkan sebagian besar kuota harian Hugging Face ZeroGPU. Gunakan 1K atau 4K untuk pertanyaan dokumen biasa."
+        >
+          Kuota ZeroGPU tinggi
+        </span>
+      )}
+    </div>
   );
 }
 

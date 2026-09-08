@@ -201,3 +201,11 @@ class ChatSessionItem(BaseModel):
     project_id: str | None
     created_at: str
     updated_at: str
+
+
+class ExportRequest(BaseModel):
+    source_type: Literal["library_file", "chat_message", "chat_session"]
+    source_id: str = Field(min_length=1, max_length=255)
+    message_id: str | None = Field(default=None, max_length=255)
+    format: Literal["docx", "md"]
+    include_sources: bool = True

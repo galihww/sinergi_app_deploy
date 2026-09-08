@@ -35,7 +35,6 @@ def library_save(body: LibrarySaveRequest, user: dict) -> LibraryItem:
     path = f"users/{user['uid']}/library/{file_id}{ext}"
     blob = storage.bucket().blob(path)
     blob.upload_from_string(raw, content_type="application/pdf" if ext == ".pdf" else "application/octet-stream")
-    blob.make_public()
     text_path = f"{path}.txt"
     text_blob = storage.bucket().blob(text_path)
     text_blob.upload_from_string(cleaned_text, content_type="text/plain; charset=utf-8")

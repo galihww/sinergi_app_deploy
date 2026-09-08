@@ -15,10 +15,12 @@ import {
   FileText,
   FileImage,
   File,
+  Download,
 } from "lucide-react";
 import { AuthGuard } from "@/lib/components/auth/AuthGuard";
 import { useAuth } from "@/lib/auth-context";
 import { fetchLibraryFiles, deleteLibraryFile } from "@/lib/rag";
+import { downloadExport, type ExportFormat } from "@/lib/export-api";
 
 /* ------------------------------------------------------------------ */
 /* Types                                                               */
@@ -250,11 +252,15 @@ function LibraryTableRow({
   selected,
   onToggle,
   onDelete,
+  onExport,
+  exportingKey,
 }: {
   file: LibraryFile;
   selected: boolean;
   onToggle: () => void;
   onDelete: () => void;
+  onExport: (format: ExportFormat) => void;
+  exportingKey: string | null;
 }) {
   return (
     <div
@@ -290,6 +296,26 @@ function LibraryTableRow({
       <div className="hidden w-24 shrink-0 text-right text-sm text-zinc-500 sm:block">
         {formatFileSize(file.sizeInBytes)}
       </div>
+      {file.type === "document" && file.extension.toLowerCase() === "pdf" && (
+        <div className="flex shrink-0 items-center gap-1">
+          {(["docx", "md"] as ExportFormat[]).map((format) => {
+            const key = `${file.id}:${format}`;
+            return (
+              <button
+                key={format}
+                type="button"
+                onClick={() => onExport(format)}
+                disabled={!!exportingKey}
+                className="inline-flex items-center gap-1 rounded-full border border-zinc-200 px-2 py-1 text-[10px] font-semibold uppercase text-zinc-600 transition-colors hover:border-pink-300 hover:text-pink-600 disabled:cursor-wait disabled:opacity-50"
+                aria-label={`Download ${file.name} as ${format.toUpperCase()}`}
+              >
+                <Download className="h-3 w-3" />
+                {exportingKey === key ? "…" : format}
+              </button>
+            );
+          })}
+        </div>
+      )}
       <button
         onClick={onDelete}
         className="shrink-0 rounded-md p-1.5 text-red-500 transition-colors hover:bg-red-50"
@@ -307,12 +333,16 @@ function LibraryTable({
   onToggle,
   onToggleAll,
   onDelete,
+  onExport,
+  exportingKey,
 }: {
   files: LibraryFile[];
   selectedIds: Set<string>;
   onToggle: (id: string) => void;
   onToggleAll: () => void;
   onDelete: (id: string) => void;
+  onExport: (file: LibraryFile, format: ExportFormat) => void;
+  exportingKey: string | null;
 }) {
   if (files.length === 0) {
     return (
@@ -355,6 +385,8 @@ function LibraryTable({
             selected={selectedIds.has(file.id)}
             onToggle={() => onToggle(file.id)}
             onDelete={() => onDelete(file.id)}
+            onExport={(format) => onExport(file, format)}
+            exportingKey={exportingKey}
           />
         ))}
       </div>
@@ -369,6 +401,8 @@ function LibraryPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [files, setFiles] = useState<LibraryFile[]>([]);
+  const [exportingKey, setExportingKey] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -460,6 +494,24 @@ function LibraryPage() {
     setSelectedIds(new Set());
   };
 
+  const handleExport = async (file: LibraryFile, format: ExportFormat) => {
+    const key = `${file.id}:${format}`;
+    setExportingKey(key);
+    setNotice(null);
+    try {
+      const filename = await downloadExport({
+        source_type: "library_file",
+        source_id: file.id,
+        format,
+      });
+      setNotice(`${filename} berhasil diunduh.`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Ekspor gagal.");
+    } finally {
+      setExportingKey(null);
+    }
+  };
+
   const selectedCount = selectedIds.size;
 
   return (
@@ -506,12 +558,19 @@ function LibraryPage() {
           </div>
 
           <div className="mt-6 rounded-2xl bg-white p-3 shadow-sm">
+            {notice && (
+              <div className="mx-3 mb-3 rounded-xl bg-purple-50 px-4 py-2 text-sm text-purple-800">
+                {notice}
+              </div>
+            )}
             <LibraryTable
               files={filteredFiles}
               selectedIds={selectedIds}
               onToggle={toggleSelect}
               onToggleAll={toggleSelectAll}
               onDelete={handleDelete}
+              onExport={handleExport}
+              exportingKey={exportingKey}
             />
           </div>
         </div>

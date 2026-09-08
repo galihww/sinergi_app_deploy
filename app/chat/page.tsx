@@ -29,6 +29,7 @@ import {
   Paperclip,
   RotateCw,
   ShieldCheck,
+  Download,
 } from "lucide-react";
 import type {
   Attachment,
@@ -52,6 +53,7 @@ import { BACKEND_URL } from "@/lib/backend-url";
 import { AuthGuard } from "@/lib/components/auth/AuthGuard";
 import { useAuth } from "@/lib/auth-context";
 import { auth } from "@/lib/firebase";
+import { downloadExport, type ExportFormat } from "@/lib/export-api";
 
 /* ------------------------------------------------------------------ */
 /* Helpers                                                             */
@@ -855,11 +857,15 @@ function MessageBubble({
   message,
   onPreviewAttachment,
   onRetry,
+  onExport,
+  exportingKey,
   isLastAssistant,
 }: {
   message: ChatMessage;
   onPreviewAttachment?: (attachment: Attachment) => void;
   onRetry?: (messageId: string) => void;
+  onExport?: (messageId: string, format: ExportFormat) => void;
+  exportingKey?: string | null;
   isLastAssistant?: boolean;
 }) {
   const canRetry =
@@ -967,6 +973,27 @@ function MessageBubble({
                   0
                 )
               ).toLocaleString("id-ID")} karakter. Buka panel Sumber Jawaban untuk memeriksa teks yang dipakai.
+            </div>
+          )}
+          {!message.isLoading && !message.isError && message.content?.trim() && onExport && (
+            <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-zinc-100 pt-3">
+              <span className="mr-1 text-[11px] font-medium text-zinc-400">Unduh jawaban</span>
+              {(["docx", "md"] as ExportFormat[]).map((format) => {
+                const key = `message:${message.id}:${format}`;
+                const pending = exportingKey === key;
+                return (
+                  <button
+                    key={format}
+                    type="button"
+                    onClick={() => onExport(message.id, format)}
+                    disabled={!!exportingKey}
+                    className="inline-flex items-center gap-1 rounded-full border border-zinc-200 px-2.5 py-1 text-[11px] font-semibold uppercase text-zinc-600 transition-colors hover:border-pink-300 hover:text-pink-600 disabled:cursor-wait disabled:opacity-50"
+                  >
+                    <Download className="h-3 w-3" />
+                    {pending ? "Menyiapkan…" : format}
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
@@ -1555,6 +1582,7 @@ export default function ChatPage() {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [filesModalSession, setFilesModalSession] = useState<ChatSession | null>(null);
   const [previewAttachment, setPreviewAttachment] = useState<Attachment | null>(null);
+  const [exportingKey, setExportingKey] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -2052,6 +2080,32 @@ const incoming = Array.from(fileList);
     setFilesModalSession(getSession(id));
   };
 
+  const handleExport = async (
+    sourceType: "chat_message" | "chat_session",
+    format: ExportFormat,
+    messageId?: string
+  ) => {
+    if (!activeSession) return;
+    const key = messageId
+      ? `message:${messageId}:${format}`
+      : `session:${activeSession.id}:${format}`;
+    setExportingKey(key);
+    try {
+      const filename = await downloadExport({
+        source_type: sourceType,
+        source_id: activeSession.id,
+        message_id: messageId,
+        format,
+        include_sources: true,
+      });
+      showToast(`${filename} berhasil diunduh.`);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Ekspor gagal.");
+    } finally {
+      setExportingKey(null);
+    }
+  };
+
   return (
     <AuthGuard>
     <div className="flex h-screen w-full overflow-hidden bg-[#F5F5F7]">
@@ -2090,16 +2144,35 @@ const incoming = Array.from(fileList);
             <span className="truncate text-sm font-semibold text-zinc-800">
               {activeSession.title}
             </span>
-            <span
-              className={`ml-3 inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
+            <div className="ml-3 flex shrink-0 items-center gap-1.5">
+              {activeMessages.some((message) => message.content?.trim()) &&
+                (["docx", "md"] as ExportFormat[]).map((format) => {
+                  const key = `session:${activeSession.id}:${format}`;
+                  return (
+                    <button
+                      key={format}
+                      type="button"
+                      onClick={() => handleExport("chat_session", format)}
+                      disabled={!!exportingKey}
+                      title={`Unduh seluruh percakapan sebagai ${format.toUpperCase()}`}
+                      className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-white px-2.5 py-1 text-[10px] font-semibold uppercase text-zinc-600 transition-colors hover:border-pink-300 hover:text-pink-600 disabled:cursor-wait disabled:opacity-50"
+                    >
+                      <Download className="h-3 w-3" />
+                      {exportingKey === key ? "Menyiapkan…" : format}
+                    </button>
+                  );
+                })}
+              <span
+                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
                 activeSession.model === "rag"
                   ? "bg-purple-100 text-purple-700"
                   : "bg-zinc-100 text-zinc-600"
               }`}
-            >
-              <Cpu className="h-3 w-3" />
-              {(activeSession.model ?? "sft").toUpperCase()}
-            </span>
+              >
+                <Cpu className="h-3 w-3" />
+                {(activeSession.model ?? "sft").toUpperCase()}
+              </span>
+            </div>
           </div>
         )}
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-6 sm:px-8">
@@ -2140,6 +2213,10 @@ const incoming = Array.from(fileList);
                   message={message}
                   onPreviewAttachment={setPreviewAttachment}
                   onRetry={handleRetry}
+                  onExport={(messageId, format) =>
+                    handleExport("chat_message", format, messageId)
+                  }
+                  exportingKey={exportingKey}
                   isLastAssistant={
                     message.role === "assistant" && i === activeMessages.length - 1
                   }

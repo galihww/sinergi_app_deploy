@@ -11,6 +11,8 @@ dependencies = [
   "python-dotenv>=1.2.3",
   "fastembed>=0.7,<1",
   "gradio-client>=2.6.1",
+  "mistune>=3.1,<4",
+  "python-docx>=1.2,<2",
 ]
 
 [dependency-groups]

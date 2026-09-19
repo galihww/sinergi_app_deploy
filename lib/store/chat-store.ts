@@ -218,9 +218,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
           messages: [message],
           createdAt: new Date().toISOString(),
           model: "sft",
-          provider: "local",
+          provider: "public",
           contextLimit:
-            state.providerContextLimits.local ?? DEFAULT_CONTEXT_LIMITS.local,
+            state.providerContextLimits.public ?? DEFAULT_CONTEXT_LIMITS.public,
         };
         createdId = newSession.id;
         persistSession(newSession);

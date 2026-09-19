@@ -1194,14 +1194,10 @@ function AttachmentChip({
 
 function ModelSwitch({
   value,
-  onChange,
 }: {
   value: "local" | "deployed" | "public";
-  onChange: (m: "local" | "deployed" | "public") => void;
 }) {
   const options: { key: "local" | "deployed" | "public"; label: string }[] = [
-    { key: "local", label: "Local" },
-    { key: "deployed", label: "Deployed" },
     { key: "public", label: "Public" },
   ];
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1251,11 +1247,13 @@ function ModelSwitch({
             key={option.key}
             data-switch-option
             data-switch-value={option.key}
-            onClick={() => onChange(option.key)}
+            type="button"
+            disabled
             className={`relative z-10 whitespace-nowrap rounded-full px-4 py-1.5 text-xs font-semibold transition-colors ${
               active ? "text-white" : "text-zinc-500 hover:text-zinc-700"
             }`}
             aria-pressed={active}
+            title="Selama masa uji coba, model Public digunakan untuk seluruh pengguna."
           >
             {option.label}
           </button>
@@ -1627,7 +1625,7 @@ export default function ChatPage() {
   const [maxOutputTokens, setMaxOutputTokens] = useState(1024);
   const [draftModel, setDraftModel] = useState<"sft" | "rag">("sft");
   const [draftProvider, setDraftProvider] = useState<"local" | "deployed" | "public">(
-    "local"
+    "public"
   );
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [toast, setToast] = useState<string | null>(null);
@@ -1646,8 +1644,8 @@ export default function ChatPage() {
   const isLoading = useChatStore((s) => s.isLoading);
   const activeSession = useChatStore((s) => s.activeSession());
   const activeMessages = useChatStore((s) => s.activeMessages());
-  const selectedProvider = activeSession?.provider ?? draftProvider;
-  const maxAllowedOutputTokens = selectedProvider === "public" ? 65_536 : 4096;
+  const selectedProvider = "public" as const;
+  const maxAllowedOutputTokens = 65_536;
   const setIsLoading = useChatStore((s) => s.setIsLoading);
   const newSession = useChatStore((s) => s.newSession);
   const selectSession = useChatStore((s) => s.selectSession);
@@ -1661,6 +1659,9 @@ export default function ChatPage() {
   const removeSessionMessage = useChatStore((s) => s.removeSessionMessage);
   const setProviderContextLimits = useChatStore(
     (s) => s.setProviderContextLimits
+  );
+  const publicContextLimit = useChatStore(
+    (s) => s.providerContextLimits.public
   );
   const loadSessions = useChatStore((s) => s.loadSessions);
   const setSessions = useChatStore((s) => s.setSessions);
@@ -1868,19 +1869,17 @@ export default function ChatPage() {
 
       if (!activeSessionId && sessionId) {
         setSessionModel(sessionId, draftModel);
-        setSessionProvider(sessionId, draftProvider);
       }
+      setSessionProvider(sessionId, selectedProvider);
 
       setInput("");
       setAttachments([]);
       setIsLoading(true);
 
       const sendModel = activeSession?.model ?? draftModel;
-      const sendProvider = activeSession?.provider ?? draftProvider;
+      const sendProvider = selectedProvider;
 
-      const historyLimit =
-        activeSession?.contextLimit ??
-        (sendProvider === "deployed" ? 262_000 : sendProvider === "public" ? 131_072 : 65_536);
+      const historyLimit = publicContextLimit;
       const trimmedHistory = trimConversationToLimit(
         activeSession?.messages ?? [],
         Math.max(1024, historyLimit - maxOutputTokens - 2048)
@@ -1910,7 +1909,8 @@ export default function ChatPage() {
       appendUserMessage,
       setIsLoading,
       draftModel,
-      draftProvider,
+      selectedProvider,
+      publicContextLimit,
       setSessionModel,
       setSessionProvider,
       streamAssistantResponse,
@@ -1941,10 +1941,9 @@ export default function ChatPage() {
 
       const baseMessages = messages.slice(0, userIndex + 1);
       const sendModel = session.model ?? "sft";
-      const sendProvider = session.provider ?? "local";
-      const historyLimit =
-        session.contextLimit ??
-        (sendProvider === "deployed" ? 262_000 : sendProvider === "public" ? 131_072 : 65_536);
+      const sendProvider = selectedProvider;
+      const historyLimit = publicContextLimit;
+      setSessionProvider(sessionId, selectedProvider);
       const trimmedHistory = trimConversationToLimit(
         baseMessages,
         Math.max(1024, historyLimit - maxOutputTokens - 2048)
@@ -1967,7 +1966,16 @@ export default function ChatPage() {
         sendMaxTokens: maxOutputTokens,
       });
     },
-    [isLoading, maxOutputTokens, removeSessionMessage, streamAssistantResponse, setIsLoading]
+    [
+      isLoading,
+      maxOutputTokens,
+      publicContextLimit,
+      removeSessionMessage,
+      selectedProvider,
+      setIsLoading,
+      setSessionProvider,
+      streamAssistantResponse,
+    ]
   );
   const handlePickTemplate = (text: string) => {
     setInput(text);
@@ -2078,7 +2086,7 @@ const incoming = Array.from(fileList);
   const handleNewChat = () => {
     newSession();
     setDraftModel("sft");
-    setDraftProvider("local");
+    setDraftProvider("public");
     setInput("");
   };
 
@@ -2099,26 +2107,6 @@ const incoming = Array.from(fileList);
         id: uid("system"),
         role: "assistant",
         content: `Mode diganti ke ${model.toUpperCase()}`,
-      };
-      upsertSessionMessage(activeSessionId, systemMsg);
-    }
-  };
-
-  const handleProviderChange = (provider: "local" | "deployed" | "public") => {
-    setDraftProvider(provider);
-    if (activeSessionId && activeSession) {
-      if (activeSession.provider === provider) return;
-      setSessionProvider(activeSessionId, provider);
-      const label =
-        provider === "deployed"
-          ? "Deployed (MiniMax M3)"
-          : provider === "public"
-            ? "Public (Gemma 4 E2B)"
-            : "Local (vLLM)";
-      const systemMsg: ChatMessage = {
-        id: uid("system"),
-        role: "assistant",
-        content: `Model diganti ke ${label}`,
       };
       upsertSessionMessage(activeSessionId, systemMsg);
     }
@@ -2285,8 +2273,7 @@ const incoming = Array.from(fileList);
         <div className="sticky bottom-0 mx-auto w-full max-w-3xl px-4 pb-5 sm:px-6">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2 px-1">
             <ModelSwitch
-              value={activeSession?.provider ?? draftProvider}
-              onChange={handleProviderChange}
+              value={selectedProvider}
             />
             <div className="flex items-center gap-2">
               <MaxOutputSelector
@@ -2315,11 +2302,7 @@ const incoming = Array.from(fileList);
             <span>
               Mode{" "}
               <span className="font-semibold text-zinc-600">
-                {(activeSession?.provider ?? draftProvider) === "local"
-                  ? "Local"
-                  : (activeSession?.provider ?? draftProvider) === "public"
-                    ? "Public"
-                    : "Deployed"}
+                Public
               </span>{" "}
               aktif · Model{" "}
               <span className="font-semibold text-zinc-600">

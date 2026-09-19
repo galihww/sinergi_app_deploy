@@ -1,14 +1,13 @@
 import { apiClient } from "@/lib/api";
 
 export type ExportFormat = "docx" | "md";
-export type ExportSourceType = "library_file" | "chat_message" | "chat_session";
+export type ExportSourceType = "library_file" | "chat_message" | "rag_sources" | "chat_session";
 
 export interface ExportRequest {
   source_type: ExportSourceType;
   source_id: string;
   message_id?: string;
   format: ExportFormat;
-  include_sources?: boolean;
 }
 
 export function filenameFromContentDisposition(value?: string): string | null {

@@ -298,6 +298,9 @@ function LibraryTableRow({
       </div>
       {file.type === "document" && file.extension.toLowerCase() === "pdf" && (
         <div className="flex shrink-0 items-center gap-1">
+          <span className="hidden text-[10px] font-semibold text-zinc-400 lg:inline">
+            Putusan input
+          </span>
           {(["docx", "md"] as ExportFormat[]).map((format) => {
             const key = `${file.id}:${format}`;
             return (

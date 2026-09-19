@@ -13,6 +13,7 @@ from app.services.export_service import (
     build_chat_message_markdown,
     build_chat_session_markdown,
     build_pdf_markdown,
+    build_rag_sources_markdown,
     docx_bytes,
     markdown_bytes,
 )
@@ -73,14 +74,13 @@ def export_document(body: ExportRequest, user: dict) -> Response:
                     title,
                     messages,
                     body.message_id,
-                    include_sources=body.include_sources,
                 )
+            elif body.source_type == "rag_sources":
+                if not body.message_id:
+                    raise HTTPException(status_code=422, detail="message_id wajib untuk mengekspor hasil RAG.")
+                markdown, stem = build_rag_sources_markdown(title, messages, body.message_id)
             else:
-                markdown, stem = build_chat_session_markdown(
-                    title,
-                    messages,
-                    include_sources=body.include_sources,
-                )
+                markdown, stem = build_chat_session_markdown(title, messages)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 

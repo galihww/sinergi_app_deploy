@@ -115,8 +115,6 @@ def build_chat_message_markdown(
     title: str,
     messages: list[dict[str, Any]],
     message_id: str,
-    *,
-    include_sources: bool = True,
 ) -> tuple[str, str]:
     title = (title or "Jawaban Legal-Verse").replace("\n", " ").replace("\r", " ").strip()
     selected_index = next((i for i, item in enumerate(messages) if item.get("id") == message_id), -1)
@@ -138,17 +136,44 @@ def build_chat_message_markdown(
     if question:
         sections.extend(["## Pertanyaan", "", question, ""])
     sections.extend(["## Jawaban", "", _message_content(selected)])
-    sources = selected.get("sources") or []
-    if include_sources and sources:
-        sections.extend(["", "## Sumber Jawaban", "", _source_markdown(sources)])
     return "\n".join(sections).rstrip() + "\n", safe_filename(f"{title}-jawaban")
+
+
+def build_rag_sources_markdown(
+    title: str,
+    messages: list[dict[str, Any]],
+    message_id: str,
+) -> tuple[str, str]:
+    title = (title or "Hasil Retrieval RAG").replace("\n", " ").replace("\r", " ").strip()
+    selected_index = next((i for i, item in enumerate(messages) if item.get("id") == message_id), -1)
+    if selected_index < 0:
+        raise ValueError("Pesan tidak ditemukan.")
+    selected = messages[selected_index]
+    if selected.get("role") != "assistant":
+        raise ValueError("Hasil RAG hanya tersedia untuk jawaban asisten.")
+    sources = selected.get("sources") or []
+    if not sources:
+        raise ValueError("Pesan ini tidak memiliki hasil retrieval RAG.")
+    question = next(
+        (_message_content(messages[i]) for i in range(selected_index - 1, -1, -1) if messages[i].get("role") == "user"),
+        "",
+    )
+    sections = [
+        f"# Hasil Retrieval RAG — {title}",
+        "",
+        f"**Diekspor:** {_exported_at()}",
+        f"**Jumlah potongan:** {len(sources)}",
+        "",
+    ]
+    if question:
+        sections.extend(["## Pertanyaan Retrieval", "", question, ""])
+    sections.extend(["## Potongan Sumber RAG", "", _source_markdown(sources)])
+    return "\n".join(sections).rstrip() + "\n", safe_filename(f"{title}-hasil-rag")
 
 
 def build_chat_session_markdown(
     title: str,
     messages: list[dict[str, Any]],
-    *,
-    include_sources: bool = True,
 ) -> tuple[str, str]:
     title = (title or "Percakapan Legal-Verse").replace("\n", " ").replace("\r", " ").strip()
     sections = [
@@ -166,9 +191,6 @@ def build_chat_session_markdown(
         exported += 1
         label = "Pengguna" if message["role"] == "user" else "Legal-Verse AI"
         sections.extend(["", f"### {label}", "", content])
-        sources = message.get("sources") or []
-        if include_sources and message["role"] == "assistant" and sources:
-            sections.extend(["", "#### Sumber Jawaban", "", _source_markdown(sources)])
     if not exported:
         raise ValueError("Percakapan belum memiliki pesan yang dapat diekspor.")
     return "\n".join(sections).rstrip() + "\n", safe_filename(title)

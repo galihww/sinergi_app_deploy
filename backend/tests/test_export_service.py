@@ -12,6 +12,7 @@ from app.services.export_service import (
     build_chat_message_markdown,
     build_chat_session_markdown,
     build_pdf_markdown,
+    build_rag_sources_markdown,
     docx_bytes,
     markdown_bytes,
     safe_filename,
@@ -55,16 +56,37 @@ def test_pdf_markdown_preserves_page_boundaries_and_warnings() -> None:
     assert "bukan salinan resmi" in markdown
 
 
-def test_single_answer_export_includes_question_and_sources_but_not_thinking() -> None:
+def test_single_answer_export_excludes_rag_sources_and_thinking() -> None:
     markdown, stem = build_chat_message_markdown("Analisis Putusan", MESSAGES, "a1")
 
     assert stem == "Analisis-Putusan-jawaban"
     assert "## Pertanyaan" in markdown
     assert "Apa amar putusan" in markdown
     assert "## Jawaban" in markdown
-    assert "## Sumber Jawaban" in markdown
-    assert "Skor relevansi: 0.912" in markdown
+    assert "Sumber Jawaban" not in markdown
+    assert "Skor relevansi" not in markdown
+    assert "Putusan 123/Pid.B/2025/PN Jkt" not in markdown
     assert "Rahasia penalaran" not in markdown
+
+
+def test_rag_export_contains_only_retrieved_sources() -> None:
+    markdown, stem = build_rag_sources_markdown("Analisis Putusan", MESSAGES, "a1")
+
+    assert stem == "Analisis-Putusan-hasil-rag"
+    assert "# Hasil Retrieval RAG" in markdown
+    assert "## Pertanyaan Retrieval" in markdown
+    assert "## Potongan Sumber RAG" in markdown
+    assert "Putusan 123/Pid.B/2025/PN Jkt" in markdown
+    assert "Skor relevansi: 0.912" in markdown
+    assert "Terdakwa dinyatakan bersalah" not in markdown
+    assert "Rahasia penalaran" not in markdown
+
+
+def test_rag_export_rejects_message_without_sources() -> None:
+    messages = [*MESSAGES, {"id": "a2", "role": "assistant", "content": "Jawaban biasa."}]
+
+    with pytest.raises(ValueError, match="tidak memiliki hasil retrieval RAG"):
+        build_rag_sources_markdown("Chat", messages, "a2")
 
 
 def test_single_answer_export_rejects_user_or_missing_message() -> None:
@@ -79,6 +101,7 @@ def test_full_chat_export_contains_each_turn_and_excludes_thinking() -> None:
 
     assert "### Pengguna" in markdown
     assert "### Legal-Verse AI" in markdown
+    assert "Putusan 123/Pid.B/2025/PN Jkt" not in markdown
     assert "Rahasia penalaran" not in markdown
 
 
@@ -132,6 +155,29 @@ def test_library_markdown_export_requires_owner_and_sets_download_headers() -> N
     assert response.body.startswith(b"# Putusan 7")
     assert "attachment" in response.headers["content-disposition"]
     assert response.headers["cache-control"] == "no-store"
+
+
+def test_rag_endpoint_exports_sources_separately_from_answer() -> None:
+    fake_db = _fake_document(
+        {
+            "user_id": "uid-123",
+            "title": "Analisis Putusan",
+            "messages": MESSAGES,
+        }
+    )
+    request = ExportRequest(
+        source_type="rag_sources",
+        source_id="chat-1",
+        message_id="a1",
+        format="md",
+    )
+
+    with mock.patch("app.controllers.export_controller.db", fake_db):
+        response = export_document(request, {"uid": "uid-123"})
+
+    body = response.body.decode("utf-8")
+    assert "Putusan 123/Pid.B/2025/PN Jkt" in body
+    assert "Terdakwa dinyatakan bersalah" not in body
 
 
 def test_export_rejects_non_owner() -> None:

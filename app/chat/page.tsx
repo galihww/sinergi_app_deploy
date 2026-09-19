@@ -857,14 +857,18 @@ function MessageBubble({
   message,
   onPreviewAttachment,
   onRetry,
-  onExport,
+  onExportAnswer,
+  onExportRag,
+  onExportDocument,
   exportingKey,
   isLastAssistant,
 }: {
   message: ChatMessage;
   onPreviewAttachment?: (attachment: Attachment) => void;
   onRetry?: (messageId: string) => void;
-  onExport?: (messageId: string, format: ExportFormat) => void;
+  onExportAnswer?: (messageId: string, format: ExportFormat) => void;
+  onExportRag?: (messageId: string, format: ExportFormat) => void;
+  onExportDocument?: (attachment: Attachment, format: ExportFormat) => void;
   exportingKey?: string | null;
   isLastAssistant?: boolean;
 }) {
@@ -884,33 +888,58 @@ function MessageBubble({
                   attachment.extractedText !== undefined &&
                   onPreviewAttachment !== undefined;
                 return (
-                  <button
-                    key={attachment.id}
-                    type="button"
-                    onClick={() => canPreview && onPreviewAttachment(attachment)}
-                    disabled={!canPreview}
-                    title={
-                      canPreview
-                        ? "Klik untuk lihat teks hasil ekstraksi"
-                        : undefined
-                    }
-                    className={`flex items-center gap-2 rounded-lg bg-white/70 px-3 py-1.5 transition-colors ${
-                      canPreview
-                        ? "cursor-pointer hover:bg-white"
-                        : "cursor-default"
-                    }`}
-                  >
-                    <FileText className="h-4 w-4 shrink-0 text-red-500" />
-                    <span className="max-w-40 truncate">
-                      {attachment.fileName}
-                    </span>
-                    {attachment.status === "done" && (
-                      <Check className="h-4 w-4 shrink-0 text-green-600" />
-                    )}
-                    {attachment.status === "error" && (
-                      <CircleX className="h-4 w-4 shrink-0 text-red-600" />
-                    )}
-                  </button>
+                  <div key={attachment.id} className="rounded-xl bg-white/50 p-1.5">
+                    <button
+                      type="button"
+                      onClick={() => canPreview && onPreviewAttachment(attachment)}
+                      disabled={!canPreview}
+                      title={
+                        canPreview
+                          ? "Klik untuk lihat teks hasil ekstraksi"
+                          : undefined
+                      }
+                      className={`flex w-full items-center gap-2 rounded-lg bg-white/70 px-3 py-1.5 transition-colors ${
+                        canPreview
+                          ? "cursor-pointer hover:bg-white"
+                          : "cursor-default"
+                      }`}
+                    >
+                      <FileText className="h-4 w-4 shrink-0 text-red-500" />
+                      <span className="max-w-40 truncate">
+                        {attachment.fileName}
+                      </span>
+                      {attachment.status === "done" && (
+                        <Check className="h-4 w-4 shrink-0 text-green-600" />
+                      )}
+                      {attachment.status === "error" && (
+                        <CircleX className="h-4 w-4 shrink-0 text-red-600" />
+                      )}
+                    </button>
+                    {attachment.status === "done" &&
+                      attachment.libraryFileId &&
+                      onExportDocument && (
+                        <div className="mt-1.5 flex items-center justify-end gap-1 px-1">
+                          <span className="mr-1 text-[10px] font-semibold text-purple-700/70">
+                            Putusan input
+                          </span>
+                          {(["docx", "md"] as ExportFormat[]).map((format) => {
+                            const key = `document:${attachment.libraryFileId}:${format}`;
+                            return (
+                              <button
+                                key={format}
+                                type="button"
+                                onClick={() => onExportDocument(attachment, format)}
+                                disabled={!!exportingKey}
+                                className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-1 text-[10px] font-semibold uppercase text-purple-800 transition-colors hover:bg-purple-50 disabled:cursor-wait disabled:opacity-50"
+                              >
+                                <Download className="h-3 w-3" />
+                                {exportingKey === key ? "…" : format}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                  </div>
                 );
               })}
             </div>
@@ -975,25 +1004,50 @@ function MessageBubble({
               ).toLocaleString("id-ID")} karakter. Buka panel Sumber Jawaban untuk memeriksa teks yang dipakai.
             </div>
           )}
-          {!message.isLoading && !message.isError && message.content?.trim() && onExport && (
-            <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-zinc-100 pt-3">
-              <span className="mr-1 text-[11px] font-medium text-zinc-400">Unduh jawaban</span>
-              {(["docx", "md"] as ExportFormat[]).map((format) => {
-                const key = `message:${message.id}:${format}`;
-                const pending = exportingKey === key;
-                return (
-                  <button
-                    key={format}
-                    type="button"
-                    onClick={() => onExport(message.id, format)}
-                    disabled={!!exportingKey}
-                    className="inline-flex items-center gap-1 rounded-full border border-zinc-200 px-2.5 py-1 text-[11px] font-semibold uppercase text-zinc-600 transition-colors hover:border-pink-300 hover:text-pink-600 disabled:cursor-wait disabled:opacity-50"
-                  >
-                    <Download className="h-3 w-3" />
-                    {pending ? "Menyiapkan…" : format}
-                  </button>
-                );
-              })}
+          {!message.isLoading && !message.isError && message.content?.trim() && onExportAnswer && (
+            <div className="mt-4 space-y-2 border-t border-zinc-100 pt-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="mr-1 min-w-28 text-[11px] font-semibold text-zinc-500">
+                  Jawaban AI saja
+                </span>
+                {(["docx", "md"] as ExportFormat[]).map((format) => {
+                  const key = `answer:${message.id}:${format}`;
+                  return (
+                    <button
+                      key={format}
+                      type="button"
+                      onClick={() => onExportAnswer(message.id, format)}
+                      disabled={!!exportingKey}
+                      className="inline-flex items-center gap-1 rounded-full border border-pink-200 bg-pink-50 px-2.5 py-1 text-[11px] font-semibold uppercase text-pink-700 transition-colors hover:border-pink-400 disabled:cursor-wait disabled:opacity-50"
+                    >
+                      <Download className="h-3 w-3" />
+                      {exportingKey === key ? "Menyiapkan…" : format}
+                    </button>
+                  );
+                })}
+              </div>
+              {!!message.sources?.length && onExportRag && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="mr-1 min-w-28 text-[11px] font-semibold text-emerald-700">
+                    Hasil RAG saja
+                  </span>
+                  {(["docx", "md"] as ExportFormat[]).map((format) => {
+                    const key = `rag:${message.id}:${format}`;
+                    return (
+                      <button
+                        key={format}
+                        type="button"
+                        onClick={() => onExportRag(message.id, format)}
+                        disabled={!!exportingKey}
+                        className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold uppercase text-emerald-700 transition-colors hover:border-emerald-400 disabled:cursor-wait disabled:opacity-50"
+                      >
+                        <Download className="h-3 w-3" />
+                        {exportingKey === key ? "Menyiapkan…" : format}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -2080,15 +2134,13 @@ const incoming = Array.from(fileList);
     setFilesModalSession(getSession(id));
   };
 
-  const handleExport = async (
-    sourceType: "chat_message" | "chat_session",
+  const handleMessageExport = async (
+    sourceType: "chat_message" | "rag_sources",
     format: ExportFormat,
-    messageId?: string
+    messageId: string
   ) => {
     if (!activeSession) return;
-    const key = messageId
-      ? `message:${messageId}:${format}`
-      : `session:${activeSession.id}:${format}`;
+    const key = `${sourceType === "chat_message" ? "answer" : "rag"}:${messageId}:${format}`;
     setExportingKey(key);
     try {
       const filename = await downloadExport({
@@ -2096,7 +2148,24 @@ const incoming = Array.from(fileList);
         source_id: activeSession.id,
         message_id: messageId,
         format,
-        include_sources: true,
+      });
+      showToast(`${filename} berhasil diunduh.`);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Ekspor gagal.");
+    } finally {
+      setExportingKey(null);
+    }
+  };
+
+  const handleDocumentExport = async (attachment: Attachment, format: ExportFormat) => {
+    if (!attachment.libraryFileId) return;
+    const key = `document:${attachment.libraryFileId}:${format}`;
+    setExportingKey(key);
+    try {
+      const filename = await downloadExport({
+        source_type: "library_file",
+        source_id: attachment.libraryFileId,
+        format,
       });
       showToast(`${filename} berhasil diunduh.`);
     } catch (error) {
@@ -2145,23 +2214,6 @@ const incoming = Array.from(fileList);
               {activeSession.title}
             </span>
             <div className="ml-3 flex shrink-0 items-center gap-1.5">
-              {activeMessages.some((message) => message.content?.trim()) &&
-                (["docx", "md"] as ExportFormat[]).map((format) => {
-                  const key = `session:${activeSession.id}:${format}`;
-                  return (
-                    <button
-                      key={format}
-                      type="button"
-                      onClick={() => handleExport("chat_session", format)}
-                      disabled={!!exportingKey}
-                      title={`Unduh seluruh percakapan sebagai ${format.toUpperCase()}`}
-                      className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-white px-2.5 py-1 text-[10px] font-semibold uppercase text-zinc-600 transition-colors hover:border-pink-300 hover:text-pink-600 disabled:cursor-wait disabled:opacity-50"
-                    >
-                      <Download className="h-3 w-3" />
-                      {exportingKey === key ? "Menyiapkan…" : format}
-                    </button>
-                  );
-                })}
               <span
                 className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
                 activeSession.model === "rag"
@@ -2213,9 +2265,13 @@ const incoming = Array.from(fileList);
                   message={message}
                   onPreviewAttachment={setPreviewAttachment}
                   onRetry={handleRetry}
-                  onExport={(messageId, format) =>
-                    handleExport("chat_message", format, messageId)
+                  onExportAnswer={(messageId, format) =>
+                    handleMessageExport("chat_message", format, messageId)
                   }
+                  onExportRag={(messageId, format) =>
+                    handleMessageExport("rag_sources", format, messageId)
+                  }
+                  onExportDocument={handleDocumentExport}
                   exportingKey={exportingKey}
                   isLastAssistant={
                     message.role === "assistant" && i === activeMessages.length - 1

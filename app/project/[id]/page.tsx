@@ -1,6 +1,5 @@
 ﻿"use client";
 
-import Image from "next/image";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -21,6 +20,7 @@ import {
 } from "lucide-react";
 import type { LibraryFile } from "@/lib/types";
 import { AuthGuard } from "@/lib/components/auth/AuthGuard";
+import { BrandLockup } from "@/lib/components/BrandLockup";
 import { useAuth } from "@/lib/auth-context";
 import { getProject, listProjectFiles, updateProject, deleteProject } from "@/lib/projects-api";
 
@@ -98,15 +98,7 @@ function Sidebar({
     >
       <div className="flex items-center justify-between px-4 pt-5 pb-4">
         {!isCollapsed && (
-          <Image
-            src="/logo.png"
-            alt="LEGAL-VERSE logo"
-            width={140}
-            height={40}
-            priority
-            className="h-9 w-auto"
-            style={{ width: "auto", height: "2.25rem" }}
-          />
+          <BrandLockup theme="dark" preload />
         )}
         <button
           onClick={onToggleCollapse}

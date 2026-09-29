@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useState, useEffect, type FormEvent } from "react";
 import {
@@ -12,6 +11,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useAuth, translateFirebaseError } from "@/lib/auth-context";
+import { BrandLockup } from "@/lib/components/BrandLockup";
 
 function InputField({
   icon: Icon,
@@ -127,16 +127,8 @@ export default function Home() {
   return (
     <div className="flex min-h-screen items-center justify-center overflow-hidden bg-zinc-100 p-4">
       <div className="relative h-[640px] w-full max-w-5xl overflow-hidden rounded-3xl bg-white shadow-2xl">
-        <div className="absolute left-6 top-6 z-20">
-          <Image
-            src="/logo_dark.png"
-            alt="Legal Verse logo"
-            width={120}
-            height={80}
-            className="h-12 w-auto"
-            style={{ width: "auto", height: "3rem" }}
-            priority
-          />
+        <div className="absolute left-6 top-4 z-20">
+          <BrandLockup variant="login" preload />
         </div>
 
         <div

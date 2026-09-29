@@ -1,6 +1,5 @@
 ﻿"use client";
 
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type AnchorHTMLAttributes, type ComponentProps } from "react";
 import {
@@ -51,6 +50,7 @@ import {
 } from "@/lib/rag";
 import { BACKEND_URL } from "@/lib/backend-url";
 import { AuthGuard } from "@/lib/components/auth/AuthGuard";
+import { BrandLockup } from "@/lib/components/BrandLockup";
 import { useAuth } from "@/lib/auth-context";
 import { auth } from "@/lib/firebase";
 import { downloadExport, type ExportFormat } from "@/lib/export-api";
@@ -571,15 +571,7 @@ function Sidebar({
       >
       <div className="flex items-center justify-between px-4 pt-5 pb-4">
         {!isCollapsed && (
-          <Image
-            src="/logo.png"
-            alt="LEGAL-VERSE logo"
-            width={140}
-            height={40}
-            priority
-            className="h-9 w-auto"
-            style={{ width: "auto", height: "2.25rem" }}
-          />
+          <BrandLockup theme="dark" preload />
         )}
         <button
           onClick={onToggleCollapse}
@@ -1624,9 +1616,6 @@ export default function ChatPage() {
   const [input, setInput] = useState("");
   const [maxOutputTokens, setMaxOutputTokens] = useState(1024);
   const [draftModel, setDraftModel] = useState<"sft" | "rag">("sft");
-  const [draftProvider, setDraftProvider] = useState<"local" | "deployed" | "public">(
-    "public"
-  );
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [toast, setToast] = useState<string | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -2086,7 +2075,6 @@ const incoming = Array.from(fileList);
   const handleNewChat = () => {
     newSession();
     setDraftModel("sft");
-    setDraftProvider("public");
     setInput("");
   };
 
@@ -2219,17 +2207,9 @@ const incoming = Array.from(fileList);
           {activeMessages.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center gap-8">
               <div className="text-center">
-<div className="mb-3 flex justify-center">
-                <Image
-                  src="/logo_dark.png"
-                  alt="LEGAL-VERSE logo"
-                  width={160}
-                  height={48}
-                  priority
-                  className="h-12 w-auto"
-                  style={{ width: "auto", height: "3rem" }}
-                />
-              </div>
+                <div className="mb-3 flex justify-center">
+                  <BrandLockup variant="hero" preload />
+                </div>
                 <p className="text-sm text-zinc-500">
                   Analisis putusan pengadilan dengan bantuan AI
                 </p>

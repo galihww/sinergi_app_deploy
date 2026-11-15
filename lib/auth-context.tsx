@@ -14,6 +14,7 @@ import {
   createUserWithEmailAndPassword,
   signInWithPopup,
   signOut as firebaseSignOut,
+  sendPasswordResetEmail,
   updateProfile,
   type User,
 } from "firebase/auth";
@@ -33,6 +34,10 @@ export const FIREBASE_ERROR_MESSAGES: Record<string, string> = {
   "auth/account-exists-with-different-credential":
     "Email sudah terdaftar dengan metode login lain",
   "auth/network-request-failed": "Gagal terhubung ke internet",
+  "auth/too-many-requests": "Terlalu banyak percobaan. Silakan coba lagi nanti",
+  "auth/user-disabled": "Akun ini telah dinonaktifkan",
+  "auth/invalid-email": "Alamat email tidak valid",
+  "auth/requires-recent-login": "Silakan login kembali sebelum mengubah akun",
 };
 
 export function translateFirebaseError(error: unknown): string {
@@ -66,6 +71,8 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<void>;
   loginGoogle: () => Promise<void>;
   register: (name: string, email: string, password: string) => Promise<void>;
+  updateDisplayName: (name: string) => Promise<void>;
+  requestPasswordReset: () => Promise<void>;
   logout: () => Promise<void>;
   getIdToken: () => Promise<string>;
 }
@@ -75,6 +82,7 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [, setProfileRevision] = useState(0);
   const [verification, setVerification] = useState<{
     verified: boolean;
     isAdmin: boolean;
@@ -146,6 +154,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await syncUser(cred.user);
   }, []);
 
+  const updateDisplayName = useCallback(async (name: string) => {
+    const current = auth.currentUser;
+    if (!current) throw new Error("Not authenticated");
+
+    const trimmedName = name.trim();
+    if (!trimmedName) throw new Error("Nama tidak boleh kosong");
+
+    await updateProfile(current, { displayName: trimmedName });
+    setProfileRevision((revision) => revision + 1);
+    await syncUser(current);
+  }, []);
+
+  const requestPasswordReset = useCallback(async () => {
+    const email = auth.currentUser?.email;
+    if (!email) throw new Error("Email akun tidak tersedia");
+    await sendPasswordResetEmail(auth, email);
+  }, []);
+
   const logout = useCallback(async () => {
     await firebaseSignOut(auth);
   }, []);
@@ -167,6 +193,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         login,
         loginGoogle,
         register,
+        updateDisplayName,
+        requestPasswordReset,
         logout,
         getIdToken,
       }}

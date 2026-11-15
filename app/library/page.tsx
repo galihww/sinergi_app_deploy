@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { AuthGuard } from "@/lib/components/auth/AuthGuard";
 import { BrandLockup } from "@/lib/components/BrandLockup";
-import { useAuth } from "@/lib/auth-context";
+import { UserAccountMenu } from "@/lib/components/UserAccountMenu";
 import { fetchLibraryFiles, deleteLibraryFile } from "@/lib/rag";
 import { downloadExport, type ExportFormat } from "@/lib/export-api";
 
@@ -76,13 +76,6 @@ function Sidebar({
   onMobileClose: () => void;
 }) {
   const router = useRouter();
-  const { user, logout, loading } = useAuth();
-  const handleLogout = async () => {
-    await logout();
-    router.push("/");
-  };
-  const displayName = user?.displayName ?? user?.email ?? "User";
-  const initials = (displayName.charAt(0) ?? "U").toUpperCase();
   return (
     <>
       {mobileOpen && (
@@ -150,36 +143,7 @@ function Sidebar({
         </button>
       </div>
 
-      <div className="flex items-center gap-3 border-t border-white/10 px-4 py-4 mt-auto">
-        {user?.photoURL ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={user.photoURL}
-            alt="Profile"
-            referrerPolicy="no-referrer"
-            className="h-9 w-9 shrink-0 rounded-full object-cover"
-          />
-        ) : (
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-pink-400 text-sm font-bold text-[#1A1625]">
-            {!isCollapsed ? initials : "A"}
-          </div>
-        )}
-        {!isCollapsed && (
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-semibold">{displayName}</div>
-            <div className="mt-0.5 truncate text-[10px] text-white/50">
-              {user?.email}
-            </div>
-            <button
-              onClick={handleLogout}
-              disabled={loading}
-              className="mt-0.5 inline-block rounded-full bg-white/10 px-3 py-0.5 text-[10px] font-semibold text-white/70 transition-colors hover:bg-white/20 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {loading ? "Logging out..." : "Log out"}
-            </button>
-          </div>
-        )}
-      </div>
+      <UserAccountMenu isCollapsed={isCollapsed} />
       </aside>
     </>
   );

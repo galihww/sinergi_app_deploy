@@ -820,6 +820,7 @@ function MessageBubble({
   onExportDocument,
   exportingKey,
   isLastAssistant,
+  retryRequiresLowerOutput,
 }: {
   message: ChatMessage;
   onPreviewAttachment?: (attachment: Attachment) => void;
@@ -829,6 +830,7 @@ function MessageBubble({
   onExportDocument?: (attachment: Attachment, format: ExportFormat) => void;
   exportingKey?: string | null;
   isLastAssistant?: boolean;
+  retryRequiresLowerOutput?: boolean;
 }) {
   const canRetry =
     !!onRetry &&
@@ -1015,10 +1017,18 @@ function MessageBubble({
           <button
             type="button"
             onClick={() => onRetry?.(message.id)}
-            className="flex items-center gap-1.5 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-600 shadow-sm transition-colors hover:border-pink-300 hover:text-pink-600"
+            disabled={retryRequiresLowerOutput}
+            title={
+              retryRequiresLowerOutput
+                ? "Ubah Output dari 64K ke 32K atau lebih kecil terlebih dahulu."
+                : undefined
+            }
+            className="flex items-center gap-1.5 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-600 shadow-sm transition-colors hover:border-pink-300 hover:text-pink-600 disabled:cursor-not-allowed disabled:border-amber-200 disabled:bg-amber-50 disabled:text-amber-700"
           >
             <RotateCw className="h-3.5 w-3.5" />
-            Retry
+            {retryRequiresLowerOutput
+              ? "Pilih ≤32K untuk Retry"
+              : "Retry"}
           </button>
         </div>
       )}
@@ -1943,6 +1953,15 @@ export default function ChatPage() {
     toastTimer.current = setTimeout(() => setToast(null), 3000);
   };
 
+  const handleMaxOutputChange = (tokens: number) => {
+    setMaxOutputTokens(tokens);
+    if (tokens === 65_536) {
+      showToast(
+        "Mode 64K eksperimental: ZeroGPU Public dapat menolak request karena batas durasi."
+      );
+    }
+  };
+
   useEffect(() => {
     return () => {
       if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -2210,6 +2229,13 @@ const incoming = Array.from(fileList);
                   isLastAssistant={
                     message.role === "assistant" && i === activeMessages.length - 1
                   }
+                  retryRequiresLowerOutput={
+                    maxOutputTokens === 65_536 &&
+                    message.isError === true &&
+                    /requested GPU duration|batas durasi per-request/i.test(
+                      message.content ?? ""
+                    )
+                  }
                 />
               ))}
             </div>
@@ -2225,12 +2251,26 @@ const incoming = Array.from(fileList);
               <MaxOutputSelector
                 value={maxOutputTokens}
                 max={maxAllowedOutputTokens}
-                onChange={setMaxOutputTokens}
+                onChange={handleMaxOutputChange}
                 disabled={isLoading}
               />
               <ContextUsageBar session={activeSession} />
             </div>
           </div>
+          {maxOutputTokens === 65_536 && (
+            <div
+              role="status"
+              className="mb-2 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-900 shadow-sm"
+            >
+              <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>
+                <strong>Mode 64K eksperimental.</strong> Fitur tetap tersedia,
+                tetapi kapasitas Public ZeroGPU dapat menolak request karena
+                batas durasi. Jika gagal, ubah Output ke 32K atau lebih kecil
+                sebelum menekan Retry.
+              </span>
+            </div>
+          )}
           <ChatInput
             value={input}
             onChange={setInput}

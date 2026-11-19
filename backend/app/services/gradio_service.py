@@ -49,6 +49,17 @@ def _is_retryable(error: BaseException) -> bool:
 def _describe_error(error: BaseException) -> str:
     message = str(error).strip() or type(error).__name__
     lowered = message.lower()
+    if (
+        "requested gpu duration" in lowered
+        or "larger than the maximum allowed" in lowered
+        or "illegal duration" in lowered
+    ):
+        return (
+            "Output yang dipilih melebihi batas durasi per-request Hugging Face "
+            "ZeroGPU. Mode 64K tetap tersedia sebagai fitur eksperimental, tetapi "
+            "belum selalu dapat dijalankan pada kapasitas Public. Pilih Output 32K "
+            "atau lebih kecil, lalu coba lagi."
+        )
     if "quota" in lowered or ("gpu task" in lowered and "left" in lowered):
         return (
             "Hugging Face ZeroGPU quota is insufficient for this request. "

@@ -79,6 +79,17 @@ def test_gradio_stream_propagates_job_exception(monkeypatch) -> None:
         list(gradio_service.gradio_stream("owner/space", {}))
 
 
+def test_gradio_stream_explains_gpu_duration_limit(monkeypatch) -> None:
+    error = RuntimeError(
+        "The requested GPU duration (3140s) is larger than the maximum allowed"
+    )
+    client = FakeClient(jobs=[FakeJob(error=error)])
+    monkeypatch.setattr(gradio_service, "_client", lambda _space: client)
+
+    with pytest.raises(RuntimeError, match="Mode 64K tetap tersedia"):
+        list(gradio_service.gradio_stream("owner/space", {}))
+
+
 def test_gradio_stream_retries_empty_job_once(monkeypatch) -> None:
     client = FakeClient(
         jobs=[

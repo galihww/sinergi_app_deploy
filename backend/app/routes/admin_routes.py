@@ -1,11 +1,17 @@
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 
 from app.core.auth import require_admin
 from app.controllers.admin_controller import admin_list_users, admin_set_verified
+from app.services.zero_gpu_quota_service import get_zero_gpu_quota
 
 router = APIRouter(prefix="/api/admin", dependencies=[Depends(require_admin)])
+
+
+@router.get("/zero-gpu/quota")
+async def admin_zero_gpu_quota_route(request: Request) -> dict:
+    return await get_zero_gpu_quota(request.app.state.http)
 
 
 @router.get("/users")

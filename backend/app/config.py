@@ -62,6 +62,13 @@ GRADIO_SYSTEM_PROMPT = (
         "Anda adalah asisten riset hukum Indonesia yang teliti. Bedakan fakta, asumsi, isu hukum, dan kesimpulan. Sebutkan yurisdiksi dan periode hukum yang relevan, jangan mengarang kutipan atau dasar hukum, dan sarankan verifikasi terhadap sumber primer. Jangan menyajikan jawaban sebagai pengganti nasihat dari advokat yang berkualifikasi.",
     ).strip()
 )
+DEDICATED_GPU_BASE_URL = os.getenv("DEDICATED_GPU_BASE_URL", "").strip().rstrip("/")
+DEDICATED_GPU_MODEL_ID = os.getenv("DEDICATED_GPU_MODEL_ID", "inaverdict").strip() or "inaverdict"
+DEDICATED_GPU_CONTEXT_WINDOW = int(os.getenv("DEDICATED_GPU_CONTEXT_WINDOW", "131072"))
+DEDICATED_GPU_MAX_OUTPUT_TOKENS = min(
+    int(os.getenv("DEDICATED_GPU_MAX_OUTPUT_TOKENS", str(MAX_CHAT_OUTPUT_TOKENS))),
+    MAX_CHAT_OUTPUT_TOKENS,
+)
 _vllm_model_cache: dict[str, float | str] = {}
 _VLLM_DISCOVERY_TTL = float(os.getenv("VLLM_DISCOVERY_TTL", "30"))
 
@@ -154,6 +161,16 @@ def _default_providers() -> list[ProviderConfig]:
         ProviderConfig(id="vllm", name="vLLM (Local)", model=discover_vllm_model(), base_url=VLLM_BASE_URL, kind="vllm", context_window=LOCAL_CONTEXT_WINDOW),
         ProviderConfig(id="wandb", name="WandB (MiniMax M3)", model=WANDB_MODEL_ID, base_url=WANDB_BASE_URL, kind="wandb", supports_images=True, api_key_env="WANDB_API_KEY", context_window=context_window_from_models_md()),
         ProviderConfig(id="gradio", name="Public (Gemma 4 E2B)", model=GRADIO_MODEL_ID, base_url=GRADIO_SPACE, kind="gradio", context_window=GRADIO_CONTEXT_WINDOW, max_output_tokens=GRADIO_MAX_NEW_TOKENS),
+        ProviderConfig(
+            id="dedicated",
+            name="GPU 128K (InaVerdict)",
+            model=DEDICATED_GPU_MODEL_ID,
+            base_url=DEDICATED_GPU_BASE_URL,
+            kind="openai",
+            api_key_env="DEDICATED_GPU_API_KEY",
+            context_window=DEDICATED_GPU_CONTEXT_WINDOW,
+            max_output_tokens=DEDICATED_GPU_MAX_OUTPUT_TOKENS,
+        ),
     ]
 
 
@@ -182,3 +199,17 @@ def provider_api_key(provider: ProviderConfig) -> str:
     if provider.api_key_env and (value := os.getenv(provider.api_key_env, "").strip()):
         return value
     return WANDB_API_KEY if provider.kind == "wandb" else ""
+
+
+def provider_configured(provider: ProviderConfig) -> bool:
+    if provider.kind in {"vllm", "gradio"}:
+        return True
+    if not provider.base_url:
+        return False
+    return not provider.api_key_env or bool(provider_api_key(provider))
+
+
+def provider_api_url(provider: ProviderConfig, resource: str) -> str:
+    base = provider.base_url.rstrip("/")
+    versioned = base if base.endswith("/v1") else f"{base}/v1"
+    return f"{versioned}/{resource.lstrip('/')}"

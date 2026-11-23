@@ -360,6 +360,48 @@ def test_load_providers_from_env_json() -> None:
     assert providers[0].supports_images is True
 
 
+def test_openai_compatible_provider_normalizes_v1_urls(monkeypatch) -> None:
+    from app.config import provider_api_key, provider_api_url, provider_configured
+    from app.schemas import ProviderConfig
+
+    monkeypatch.setenv("TEST_GPU_API_KEY", "secret")
+    provider = ProviderConfig(
+        id="dedicated",
+        name="GPU 128K",
+        model="inaverdict",
+        base_url="http://gpu.test:8000/v1",
+        kind="openai",
+        api_key_env="TEST_GPU_API_KEY",
+        context_window=131_072,
+        max_output_tokens=65_536,
+    )
+
+    assert provider_configured(provider) is True
+    assert provider_api_key(provider) == "secret"
+    assert provider_api_url(provider, "models") == "http://gpu.test:8000/v1/models"
+    assert provider_api_url(provider, "/chat/completions") == (
+        "http://gpu.test:8000/v1/chat/completions"
+    )
+
+
+def test_openai_compatible_provider_requires_base_url_and_key(monkeypatch) -> None:
+    from app.config import provider_configured
+    from app.schemas import ProviderConfig
+
+    monkeypatch.delenv("MISSING_GPU_API_KEY", raising=False)
+    provider = ProviderConfig(
+        id="dedicated",
+        name="GPU 128K",
+        model="inaverdict",
+        base_url="http://gpu.test:8000/v1",
+        kind="openai",
+        api_key_env="MISSING_GPU_API_KEY",
+    )
+
+    assert provider_configured(provider) is False
+    assert provider_configured(provider.model_copy(update={"base_url": ""})) is False
+
+
 def test_gradio_payload_builds_history_and_clamps_params() -> None:
     from app.config import GRADIO_MAX_NEW_TOKENS, GRADIO_SYSTEM_PROMPT, GRADIO_TEMPERATURE
     from app.controllers.chat_controller import _gradio_payload

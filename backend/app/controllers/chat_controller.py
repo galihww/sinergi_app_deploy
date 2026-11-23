@@ -7,7 +7,7 @@ import httpx
 from fastapi import HTTPException, Request
 from fastapi.responses import StreamingResponse
 
-from app.config import (MODEL_ID, PROVIDER_BY_ID, SYSTEM_PROMPT, VLLM_BASE_URL, _vllm_model_cache, provider_api_key, resolve_vllm_model, GRADIO_MAX_INPUT_TOKENS, GRADIO_MAX_NEW_TOKENS, GRADIO_SYSTEM_PROMPT, GRADIO_TEMPERATURE)
+from app.config import (MODEL_ID, PROVIDER_BY_ID, SYSTEM_PROMPT, VLLM_BASE_URL, _vllm_model_cache, provider_api_key, provider_api_url, provider_configured, resolve_vllm_model, GRADIO_MAX_INPUT_TOKENS, GRADIO_MAX_NEW_TOKENS, GRADIO_SYSTEM_PROMPT, GRADIO_TEMPERATURE)
 from app.core.firebase import db
 from app.schemas import MAX_CHAT_OUTPUT_TOKENS, ChatRequest, ChatResponse, ChatSessionItem, ChatSessionSaveRequest, Message, ProviderConfig, StoredChatMessage
 from app.services.content_service import estimate_tokens, expand_content, flatten_content
@@ -32,13 +32,13 @@ async def _prepare(body: ChatRequest, request: Request):
     if provider.kind == "gradio":
         return provider, provider.model, "", {}, [], _gradio_payload(body)
     key = provider_api_key(provider)
-    if provider.kind == "wandb"and not key:
-        raise HTTPException(status_code=503, detail=f"Provider '{provider.id}' is not configured (missing API key.")
+    if not provider_configured(provider):
+        raise HTTPException(status_code=503, detail=f"Provider '{provider.id}' is not configured.")
     model = (await resolve_vllm_model(request.app.state.http) or provider.model) if provider.kind == "vllm" else provider.model
     messages = [{"role": m.role, "content": expand_content(m.content) if provider.kind == "wandb" else flatten_content(m.content)} for m in body.messages]
     if SYSTEM_PROMPT and not any(m["role"] == "system" for m in messages):
         messages.insert(0, {"role": "system", "content": SYSTEM_PROMPT})
-    return provider, model, f"{provider.base_url}/v1/chat/completions", ({"Authorization": f"Bearer {key}"} if provider.kind == "wandb" else {}), messages, None
+    return provider, model, provider_api_url(provider, "chat/completions"), ({"Authorization": f"Bearer {key}"} if key else {}), messages, None
 
 
 def _fit_gradio_message(text: str, token_budget: int) -> str:

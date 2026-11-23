@@ -9,7 +9,8 @@ from fastapi.responses import JSONResponse
 
 from app.config import (
     MODEL_ID, PROVIDER_BY_ID, PROVIDERS, VLLM_BASE_URL, WANDB_API_KEY, WANDB_MODEL_ID,
-    _vllm_model_cache, provider_api_key, resolve_vllm_model,
+    _vllm_model_cache, provider_api_key, provider_api_url, provider_configured,
+    resolve_vllm_model,
 )
 from app.vllm_on_demand import VllmOnDemandManager
 
@@ -35,7 +36,19 @@ async def list_models(request: Request) -> JSONResponse:
     providers = []
     for provider in PROVIDERS:
         model = await resolve_vllm_model(request.app.state.http) if provider.kind == "vllm" else provider.model
-        providers.append({"id": provider.id, "name": provider.name, "model": model, "kind": provider.kind, "supports_images": provider.supports_images, "context_window": provider.context_window, "max_output_tokens": provider.max_output_tokens, "configured": provider.kind == "gradio" or bool(provider_api_key(provider))})
+        configured = provider_configured(provider)
+        available = configured
+        if configured and provider.kind == "openai":
+            try:
+                response = await request.app.state.http.get(
+                    provider_api_url(provider, "models"),
+                    headers={"Authorization": f"Bearer {provider_api_key(provider)}"},
+                    timeout=5,
+                )
+                available = response.is_success
+            except (httpx.HTTPError, RuntimeError):
+                available = False
+        providers.append({"id": provider.id, "name": provider.name, "model": model, "kind": provider.kind, "supports_images": provider.supports_images, "context_window": provider.context_window, "max_output_tokens": provider.max_output_tokens, "configured": configured, "available": available})
     from app.config import DEFAULT_PROVIDER
     return JSONResponse(content={"default": DEFAULT_PROVIDER, "providers": providers})
 

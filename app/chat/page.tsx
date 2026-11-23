@@ -150,15 +150,18 @@ type ChatPayloadMessage = {
   content: string | ChatContentPart[];
 };
 
+type ProviderKey = "local" | "deployed" | "public" | "gpu";
+type BackendProviderId = "vllm" | "wandb" | "gradio" | "dedicated";
+
 const MAX_OUTPUT_OPTIONS = [1024, 4096, 8192, 16_384, 32_768, 65_536] as const;
 
 async function buildChatBody(
   messages: Pick<ChatMessage, "role" | "content">[],
-  provider: "vllm" | "wandb" | "gradio",
+  provider: BackendProviderId,
   maxTokens: number,
   context?: string,
   attachments?: Attachment[]
-): Promise<{ provider: "vllm" | "wandb" | "gradio"; messages: ChatPayloadMessage[]; max_tokens: number }> {
+): Promise<{ provider: BackendProviderId; messages: ChatPayloadMessage[]; max_tokens: number }> {
   let lastUserIndex = -1;
   messages.forEach((m, i) => {
     if (m.role === "user") lastUserIndex = i;
@@ -272,7 +275,7 @@ async function streamChat(
 
 async function requestAIResponse(
   messages: Pick<ChatMessage, "role" | "content">[],
-  provider: "vllm" | "wandb" | "gradio",
+  provider: BackendProviderId,
   maxTokens: number,
   context?: string,
   attachments?: Attachment[],
@@ -351,7 +354,7 @@ async function requestRagResponse(
   question: string,
   attachments: Attachment[],
   conversation: Pick<ChatMessage, "role" | "content">[],
-  provider: "local" | "deployed" | "public",
+  provider: ProviderKey,
   maxTokens: number,
   handlers?: StreamHandlers
 ): Promise<{ message: ChatMessage; sources: Source[] }> {
@@ -1162,12 +1165,20 @@ function AttachmentChip({
 
 function ModelSwitch({
   value,
+  options,
+  onChange,
 }: {
-  value: "local" | "deployed" | "public";
+  value: ProviderKey;
+  options: ProviderKey[];
+  onChange: (provider: ProviderKey) => void;
 }) {
-  const options: { key: "local" | "deployed" | "public"; label: string }[] = [
-    { key: "public", label: "Public" },
-  ];
+  const labels: Record<ProviderKey, string> = {
+    local: "Local",
+    deployed: "Deployed",
+    public: "Public ZeroGPU",
+    gpu: "GPU 128K",
+  };
+  const visibleOptions = options.map((key) => ({ key, label: labels[key] }));
   const containerRef = useRef<HTMLDivElement>(null);
   const [indicator, setIndicator] = useState({ width: 0, offset: 0 });
 
@@ -1196,7 +1207,7 @@ function ModelSwitch({
       observer.disconnect();
       window.removeEventListener("resize", update);
     };
-  }, [value]);
+  }, [value, options]);
 
   return (
     <div
@@ -1208,7 +1219,7 @@ function ModelSwitch({
         className="absolute top-1 bottom-1 rounded-full bg-zinc-900 shadow transition-[left,width] duration-200 ease-out"
         style={{ left: indicator.offset, width: indicator.width }}
       />
-      {options.map((option) => {
+      {visibleOptions.map((option) => {
         const active = option.key === value;
         return (
           <button
@@ -1216,12 +1227,12 @@ function ModelSwitch({
             data-switch-option
             data-switch-value={option.key}
             type="button"
-            disabled
+            onClick={() => onChange(option.key)}
             className={`relative z-10 whitespace-nowrap rounded-full px-4 py-1.5 text-xs font-semibold transition-colors ${
               active ? "text-white" : "text-zinc-500 hover:text-zinc-700"
             }`}
             aria-pressed={active}
-            title="Selama masa uji coba, model Public digunakan untuk seluruh pengguna."
+            title={option.key === "gpu" ? "GPU OpenAI-compatible dengan konteks 128K" : "Hugging Face ZeroGPU"}
           >
             {option.label}
           </button>
@@ -1600,6 +1611,9 @@ export default function ChatPage() {
   const [filesModalSession, setFilesModalSession] = useState<ChatSession | null>(null);
   const [previewAttachment, setPreviewAttachment] = useState<Attachment | null>(null);
   const [exportingKey, setExportingKey] = useState<string | null>(null);
+  const [selectedProvider, setSelectedProvider] = useState<ProviderKey>("public");
+  const [availableProviders, setAvailableProviders] = useState<ProviderKey[]>(["public"]);
+  const [providerOutputLimits, setProviderOutputLimits] = useState<Partial<Record<ProviderKey, number>>>({ public: 65_536 });
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -1609,8 +1623,7 @@ export default function ChatPage() {
   const isLoading = useChatStore((s) => s.isLoading);
   const activeSession = useChatStore((s) => s.activeSession());
   const activeMessages = useChatStore((s) => s.activeMessages());
-  const selectedProvider = "public" as const;
-  const maxAllowedOutputTokens = 65_536;
+  const maxAllowedOutputTokens = providerOutputLimits[selectedProvider] ?? 65_536;
   const setIsLoading = useChatStore((s) => s.setIsLoading);
   const newSession = useChatStore((s) => s.newSession);
   const selectSession = useChatStore((s) => s.selectSession);
@@ -1625,8 +1638,8 @@ export default function ChatPage() {
   const setProviderContextLimits = useChatStore(
     (s) => s.setProviderContextLimits
   );
-  const publicContextLimit = useChatStore(
-    (s) => s.providerContextLimits.public
+  const selectedContextLimit = useChatStore(
+    (s) => s.providerContextLimits[selectedProvider]
   );
   const loadSessions = useChatStore((s) => s.loadSessions);
   const setSessions = useChatStore((s) => s.setSessions);
@@ -1653,14 +1666,31 @@ export default function ChatPage() {
         if (!res.ok) return;
         const data = await res.json();
         if (cancelled || !Array.isArray(data.providers)) return;
-        const limits: Partial<Record<"local" | "deployed" | "public", number>> = {};
+        const limits: Partial<Record<ProviderKey, number>> = {};
+        const outputLimits: Partial<Record<ProviderKey, number>> = {};
+        const available: ProviderKey[] = [];
         for (const p of data.providers) {
-          const key = p.id === "vllm" ? "local" : p.id === "wandb" ? "deployed" : p.id === "gradio" ? "public" : null;
+          const key: ProviderKey | null = p.id === "vllm" ? "local" : p.id === "wandb" ? "deployed" : p.id === "gradio" ? "public" : p.id === "dedicated" ? "gpu" : null;
           if (key && typeof p.context_window === "number") {
             limits[key] = p.context_window;
           }
+          if (key && typeof p.max_output_tokens === "number") {
+            outputLimits[key] = p.max_output_tokens;
+          }
+          if (key && p.configured !== false && p.available !== false && (key === "gpu" || key === "public")) {
+            available.push(key);
+          }
         }
         if (Object.keys(limits).length > 0) setProviderContextLimits(limits);
+        setProviderOutputLimits(outputLimits);
+        const nextAvailable = (["gpu", "public"] as ProviderKey[]).filter(
+          (provider) => provider === "public" || available.includes(provider)
+        );
+        setAvailableProviders(nextAvailable);
+        setSelectedProvider((current) => {
+          if (current === "public" && nextAvailable.includes("gpu")) return "gpu";
+          return nextAvailable.includes(current) ? current : "public";
+        });
       } catch {
         // backend tak terjangkau; pertahankan limit default
       }
@@ -1691,7 +1721,7 @@ export default function ChatPage() {
       conversation: Pick<ChatMessage, "role" | "content">[];
       conversationAttachments: Attachment[];
       sendModel: "sft" | "rag";
-      sendProvider: "local" | "deployed" | "public";
+      sendProvider: ProviderKey;
       sendMaxTokens: number;
     }) => {
       const {
@@ -1776,7 +1806,7 @@ export default function ChatPage() {
             { removeLoading: true }
           );
         } else {
-          const provider = sendProvider === "deployed" ? "wandb" : sendProvider === "public" ? "gradio" : "vllm";
+          const provider: BackendProviderId = sendProvider === "deployed" ? "wandb" : sendProvider === "public" ? "gradio" : sendProvider === "gpu" ? "dedicated" : "vllm";
           const aiResponse = await requestAIResponse(
             conversation,
             provider,
@@ -1844,7 +1874,7 @@ export default function ChatPage() {
       const sendModel = activeSession?.model ?? draftModel;
       const sendProvider = selectedProvider;
 
-      const historyLimit = publicContextLimit;
+      const historyLimit = selectedContextLimit;
       const trimmedHistory = trimConversationToLimit(
         activeSession?.messages ?? [],
         Math.max(1024, historyLimit - maxOutputTokens - 2048)
@@ -1875,7 +1905,7 @@ export default function ChatPage() {
       setIsLoading,
       draftModel,
       selectedProvider,
-      publicContextLimit,
+      selectedContextLimit,
       setSessionModel,
       setSessionProvider,
       streamAssistantResponse,
@@ -1907,7 +1937,7 @@ export default function ChatPage() {
       const baseMessages = messages.slice(0, userIndex + 1);
       const sendModel = session.model ?? "sft";
       const sendProvider = selectedProvider;
-      const historyLimit = publicContextLimit;
+      const historyLimit = selectedContextLimit;
       setSessionProvider(sessionId, selectedProvider);
       const trimmedHistory = trimConversationToLimit(
         baseMessages,
@@ -1934,7 +1964,7 @@ export default function ChatPage() {
     [
       isLoading,
       maxOutputTokens,
-      publicContextLimit,
+      selectedContextLimit,
       removeSessionMessage,
       selectedProvider,
       setIsLoading,
@@ -1955,7 +1985,7 @@ export default function ChatPage() {
 
   const handleMaxOutputChange = (tokens: number) => {
     setMaxOutputTokens(tokens);
-    if (tokens === 65_536) {
+    if (tokens === 65_536 && selectedProvider === "public") {
       showToast(
         "Mode 64K eksperimental: ZeroGPU Public dapat menolak request karena batas durasi."
       );
@@ -2230,6 +2260,7 @@ const incoming = Array.from(fileList);
                     message.role === "assistant" && i === activeMessages.length - 1
                   }
                   retryRequiresLowerOutput={
+                    selectedProvider === "public" &&
                     maxOutputTokens === 65_536 &&
                     message.isError === true &&
                     /requested GPU duration|batas durasi per-request/i.test(
@@ -2246,6 +2277,8 @@ const incoming = Array.from(fileList);
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2 px-1">
             <ModelSwitch
               value={selectedProvider}
+              options={availableProviders}
+              onChange={setSelectedProvider}
             />
             <div className="flex items-center gap-2">
               <MaxOutputSelector
@@ -2257,7 +2290,7 @@ const incoming = Array.from(fileList);
               <ContextUsageBar session={activeSession} />
             </div>
           </div>
-          {maxOutputTokens === 65_536 && (
+          {selectedProvider === "public" && maxOutputTokens === 65_536 && (
             <div
               role="status"
               className="mb-2 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-900 shadow-sm"
@@ -2288,7 +2321,7 @@ const incoming = Array.from(fileList);
             <span>
               Mode{" "}
               <span className="font-semibold text-zinc-600">
-                Public
+                {selectedProvider === "gpu" ? "GPU 128K" : "Public ZeroGPU"}
               </span>{" "}
               aktif · Model{" "}
               <span className="font-semibold text-zinc-600">

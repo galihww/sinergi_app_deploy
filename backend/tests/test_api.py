@@ -402,6 +402,27 @@ def test_openai_compatible_provider_requires_base_url_and_key(monkeypatch) -> No
     assert provider_configured(provider.model_copy(update={"base_url": ""})) is False
 
 
+def test_openai_provider_output_is_capped_by_remaining_context() -> None:
+    from app.controllers.chat_controller import _effective_max_tokens
+    from app.schemas import ProviderConfig
+
+    provider = ProviderConfig(
+        id="dedicated",
+        name="GPU 128K",
+        model="inaverdict",
+        base_url="https://gpu.test/v1",
+        kind="openai",
+        context_window=131_072,
+        max_output_tokens=131_072,
+    )
+
+    messages = [{"role": "user", "content": "uji singkat"}]
+    effective = _effective_max_tokens(provider, messages, 131_072)
+
+    assert 1 < effective < 131_072
+    assert effective <= provider.context_window - 256
+
+
 def test_gradio_payload_builds_history_and_clamps_params() -> None:
     from app.config import GRADIO_MAX_NEW_TOKENS, GRADIO_SYSTEM_PROMPT, GRADIO_TEMPERATURE
     from app.controllers.chat_controller import _gradio_payload

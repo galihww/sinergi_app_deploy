@@ -5,7 +5,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field
 
 MAX_DATA_URL_LENGTH = 14_000_000
-MAX_CHAT_OUTPUT_TOKENS = 65_536
+MAX_CHAT_OUTPUT_TOKENS = 131_072
 
 
 class ProviderConfig(BaseModel):

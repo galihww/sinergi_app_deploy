@@ -153,7 +153,15 @@ type ChatPayloadMessage = {
 type ProviderKey = "local" | "deployed" | "public" | "gpu";
 type BackendProviderId = "vllm" | "wandb" | "gradio" | "dedicated";
 
-const MAX_OUTPUT_OPTIONS = [1024, 4096, 8192, 16_384, 32_768, 65_536] as const;
+const MAX_OUTPUT_OPTIONS = [
+  1024,
+  4096,
+  8192,
+  16_384,
+  32_768,
+  65_536,
+  131_072,
+] as const;
 
 async function buildChatBody(
   messages: Pick<ChatMessage, "role" | "content">[],

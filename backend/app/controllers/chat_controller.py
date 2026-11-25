@@ -115,6 +115,23 @@ def _text(value) -> str:
     return ""
 
 
+def _effective_max_tokens(
+    provider: ProviderConfig,
+    messages: list[dict],
+    requested: int,
+) -> int:
+    """Keep OpenAI-compatible requests inside the provider context window."""
+    if provider.kind != "openai":
+        return requested
+    prompt_tokens = sum(
+        estimate_tokens(message.get("content", ""))
+        for message in messages
+        if isinstance(message.get("content"), str)
+    )
+    available = max(1, provider.context_window - prompt_tokens - 256)
+    return min(requested, available)
+
+
 async def chat(body: ChatRequest, request: Request) -> ChatResponse:
     manager = await _acquire(body, request)
     try:
@@ -129,7 +146,7 @@ async def chat(body: ChatRequest, request: Request) -> ChatResponse:
             return ChatResponse(message=Message(role="assistant", content=content, thinking=None), model=model, provider=body.provider)
  
         try:
-            response = await request.app.state.http.post(url, headers=headers, json={"model": model, "messages": messages, "temperature": body.temperature, "max_tokens": body.max_tokens, "stream": False})
+            response = await request.app.state.http.post(url, headers=headers, json={"model": model, "messages": messages, "temperature": body.temperature, "max_tokens": _effective_max_tokens(provider, messages, body.max_tokens), "stream": False})
             response.raise_for_status()
         except httpx.HTTPError as exc:
 
@@ -202,7 +219,7 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
                 yield _event({"type": "done", "model": model})
                 return
 
-            async with request.app.state.http.stream("POST", url, headers=headers, json={"model": model, "messages": messages, "temperature": body.temperature, "max_tokens": body.max_tokens, "stream": True}) as response:
+            async with request.app.state.http.stream("POST", url, headers=headers, json={"model": model, "messages": messages, "temperature": body.temperature, "max_tokens": _effective_max_tokens(provider, messages, body.max_tokens), "stream": True}) as response:
                 response.raise_for_status()
                 async for line in response.aiter_lines():
                     if not line.startswith("data:"):

@@ -153,6 +153,13 @@ type ChatPayloadMessage = {
 type ProviderKey = "local" | "deployed" | "public" | "gpu";
 type BackendProviderId = "vllm" | "wandb" | "gradio" | "dedicated";
 
+function toBackendProvider(provider: ProviderKey): BackendProviderId {
+  if (provider === "deployed") return "wandb";
+  if (provider === "public") return "gradio";
+  if (provider === "gpu") return "dedicated";
+  return "vllm";
+}
+
 const MAX_OUTPUT_OPTIONS = [
   1024,
   4096,
@@ -416,7 +423,7 @@ async function requestRagResponse(
 
   const message = await requestAIResponse(
     conversation,
-    provider === "deployed" ? "wandb" : provider === "public" ? "gradio" : "vllm",
+    toBackendProvider(provider),
     maxTokens,
     context ||
       (fallbackText
@@ -1376,11 +1383,13 @@ function ContextUsageBar({ session }: { session: ChatSession | null }) {
 function MaxOutputSelector({
   value,
   max,
+  provider,
   onChange,
   disabled,
 }: {
   value: number;
   max: number;
+  provider: ProviderKey;
   onChange: (value: number) => void;
   disabled: boolean;
 }) {
@@ -1405,9 +1414,13 @@ function MaxOutputSelector({
       {value > 8192 && (
         <span
           className="text-[10px] font-medium text-amber-700"
-          title="Output besar membutuhkan sebagian besar kuota harian Hugging Face ZeroGPU. Gunakan 1K atau 4K untuk pertanyaan dokumen biasa."
+          title={
+            provider === "public"
+              ? "Output besar membutuhkan sebagian besar kuota harian Hugging Face ZeroGPU."
+              : "Output aktual disesuaikan dengan sisa context window setelah prompt dan dokumen."
+          }
         >
-          Kuota ZeroGPU tinggi
+          {provider === "public" ? "Kuota ZeroGPU tinggi" : "Disesuaikan sisa konteks"}
         </span>
       )}
     </div>
@@ -1814,7 +1827,7 @@ export default function ChatPage() {
             { removeLoading: true }
           );
         } else {
-          const provider: BackendProviderId = sendProvider === "deployed" ? "wandb" : sendProvider === "public" ? "gradio" : sendProvider === "gpu" ? "dedicated" : "vllm";
+          const provider = toBackendProvider(sendProvider);
           const aiResponse = await requestAIResponse(
             conversation,
             provider,
@@ -2292,6 +2305,7 @@ const incoming = Array.from(fileList);
               <MaxOutputSelector
                 value={maxOutputTokens}
                 max={maxAllowedOutputTokens}
+                provider={selectedProvider}
                 onChange={handleMaxOutputChange}
                 disabled={isLoading}
               />
